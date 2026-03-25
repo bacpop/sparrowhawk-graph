@@ -5,7 +5,7 @@ use core::fmt;
 use crate::types::EdgeType;
 
 /// Contains the information stored at a graph node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeStruct {
     /// k-mer count (or mean count after shrinkage).
     pub counts: u16,

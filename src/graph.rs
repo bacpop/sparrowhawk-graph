@@ -126,6 +126,7 @@ impl DbgGraph {
     }
 }
 
+
 // ─── Graph info ──────────────────────────────────────────────────────────────
 
 impl DbgGraph {
@@ -695,5 +696,130 @@ impl DbgGraph {
         });
 
         output
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use nohash_hasher::NoHashHasher;
+    use std::hash::BuildHasherDefault;
+
+    #[test]
+    fn test_new_graph() {
+        let graph = DbgGraph::new(31);
+        assert_eq!(graph.k(), 31);
+        assert_eq!(graph.node_count(), 0);
+        assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_add_node() {
+        let mut graph = DbgGraph::new(31);
+        let node_data = NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None };
+        let node_idx = graph.add_node(node_data.clone());
+        
+        assert_eq!(graph.node_count(), 1);
+        assert!(graph.contains_node(node_idx));
+        assert_eq!(graph.node_weight(node_idx), Some(&node_data));
+    }
+
+    #[test]
+    fn test_add_edge() {
+        let mut graph = DbgGraph::new(31);
+        let node1 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None });
+        let node2 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![1], innerdir: None });
+        
+        graph.add_edge(node1, node2, EdgeType::MinToMin);
+        
+        assert_eq!(graph.edge_count(), 1);
+        assert_eq!(graph.out_degree(node1), 1);
+        assert_eq!(graph.out_degree(node2), 0);
+    }
+
+    #[test]
+    fn test_graph_from_empty_kmer_map() {
+        let k = 31;
+        let empty_map: HashMap<u64, HashInfoSimple, BuildHasherDefault<NoHashHasher<u64>>> = HashMap::default();
+        
+        let graph = DbgGraph::from_kmer_map(k, &empty_map);
+        
+        assert_eq!(graph.k(), k);
+        assert_eq!(graph.node_count(), 0);
+        assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_node_degrees() {
+        let mut graph = DbgGraph::new(31);
+        let node1 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None });
+        let node2 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![1], innerdir: None });
+        let node3 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![2], innerdir: None });
+        
+        graph.add_edge(node1, node2, EdgeType::MinToMin);
+        graph.add_edge(node2, node1, EdgeType::MaxToMax);
+        graph.add_edge(node2, node3, EdgeType::MinToMin);
+        
+        assert_eq!(graph.out_degree(node1), 1);
+        assert_eq!(graph.in_degree(node1), 1);
+        assert_eq!(graph.out_degree(node2), 2); // node2 has edges to node1 and node3
+        assert_eq!(graph.in_degree(node2), 1);
+        assert_eq!(graph.out_degree(node3), 0);
+        assert_eq!(graph.in_degree(node3), 1);
+    }
+
+    #[test]
+    fn test_forward_backward_neighbors() {
+        let mut graph = DbgGraph::new(31);
+        let node1 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None });
+        let node2 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![1], innerdir: None });
+        
+        graph.add_edge(node1, node2, EdgeType::MinToMin);
+        graph.add_edge(node2, node1, EdgeType::MaxToMax);
+        
+        let forward_neighbors = graph.forward_neighbors(node1, CarryType::Min);
+        let backward_neighbors = graph.backward_neighbors(node1, CarryType::Max);
+        
+        assert_eq!(forward_neighbors.len(), 1);
+        assert_eq!(backward_neighbors.len(), 1);
+    }
+
+    #[test]
+    fn test_gfa_serialization_empty_graph() {
+        let graph = DbgGraph::new(31);
+        let gfa_string = graph.get_gfa_string();
+        
+        // Check that it's valid GFA format
+        assert!(gfa_string.contains("H\tVN:Z:1.0"));
+        // Empty graphs may not have segment lines, so just check it's not empty
+        assert!(!gfa_string.is_empty());
+    }
+
+    #[test]
+    fn test_graph_contains_node() {
+        let mut graph = DbgGraph::new(31);
+        let node_data = NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None };
+        let node_idx = graph.add_node(node_data);
+        
+        assert!(graph.contains_node(node_idx));
+        assert!(!graph.contains_node(NodeIndex::new(999)));
+    }
+
+    #[test]
+    fn test_edge_types() {
+        let mut graph = DbgGraph::new(31);
+        let node1 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![0], innerdir: None });
+        let node2 = graph.add_node(NodeStruct { counts: 1, abs_ind: vec![1], innerdir: None });
+        
+        graph.add_edge(node1, node2, EdgeType::MinToMin);
+        graph.add_edge(node2, node1, EdgeType::MaxToMax);
+        
+        let edges = graph.all_neighbors(node1);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].1, EdgeType::MinToMin);
+        
+        let edges = graph.all_neighbors(node2);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].1, EdgeType::MaxToMax);
     }
 }
