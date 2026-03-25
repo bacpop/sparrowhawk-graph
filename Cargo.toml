@@ -1,0 +1,10 @@
+[package]
+name = "sphk-graph"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+petgraph      = "0.8.1"
+nohash-hasher = "0.2.0"
+log           = "0.4"
+stacker       = "0.1.20"
