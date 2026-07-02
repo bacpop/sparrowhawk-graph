@@ -1,5 +1,5 @@
 [package]
-name = "sphk-graph"
+name = "sparrowhawk-graph"
 version = "0.1.0"
 edition = "2021"
 

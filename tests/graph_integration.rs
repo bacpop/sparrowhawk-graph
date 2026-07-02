@@ -1,7 +1,7 @@
-// Integration tests for sphk-graph
+// Integration tests for sparrowhawk-graph
 // Tests the public API and module interactions
 
-use sphk_graph::*;
+use sparrowhawk_graph::*;
 use std::collections::HashMap;
 use nohash_hasher::NoHashHasher;
 use std::hash::BuildHasherDefault;

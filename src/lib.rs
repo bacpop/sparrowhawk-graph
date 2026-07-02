@@ -1,4 +1,4 @@
-//! `sphk-graph`: bidirected de Bruijn graph library for the Sparrowhawk assembler.
+//! `sparrowhawk-graph`: bidirected de Bruijn graph library for the Sparrowhawk assembler.
 
 pub mod graph;
 pub mod node;
