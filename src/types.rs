@@ -34,21 +34,24 @@ pub struct HashInfoSimple {
     pub counts: u16,
 }
 
-/// Describes the type of an edge: which canonicality it originates from and which it points to.
+/// Enum that describes the type of one edge of the graph (essentially,
+/// from which hash it comes (either canonical/minimum or non-canonical/maximum)
+/// and with what it is linked (again, either min/max).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeType {
-    /// Links canonical hash to canonical hash.
+    /// Links canonical hash to canonical hash
     MinToMin,
-    /// Links non-canonical hash to non-canonical hash.
+    /// Links non-canonical hash to non-canonical hash
     MaxToMax,
-    /// Links canonical hash to non-canonical hash.
+    /// Links canonical hash to non-canonical hash
     MinToMax,
-    /// Links non-canonical hash to canonical hash.
+    /// Links non-canonical hash to canonical hash
     MaxToMin,
 }
 
 impl EdgeType {
-    /// Returns the reverse edge type.
+    /// Reverses the EdgeType, changing it to the DNA de Bruijn-graph edge that would exist
+    /// and begin at the end of the original EdgeType and end at the beginning of the same one.
     pub fn rev(&self) -> EdgeType {
         match self {
             EdgeType::MinToMin => EdgeType::MaxToMax,
@@ -57,7 +60,8 @@ impl EdgeType {
         }
     }
 
-    /// Returns the `CarryType` of the origin and destination of this edge.
+    /// Returns the CarryType of the origin and end of the edges, i.e. the canonicality of the
+    /// hashes that this edge connects.
     pub fn get_from_and_to(&self) -> (CarryType, CarryType) {
         match self {
             EdgeType::MinToMin => (CarryType::Min, CarryType::Min),
@@ -67,7 +71,7 @@ impl EdgeType {
         }
     }
 
-    /// Constructs an `EdgeType` from two `CarryType` values.
+    /// Constructs an EdgeType from the canonicality (CarryType) of the source and end of the edges.
     pub fn from_carrytypes(first: CarryType, second: CarryType) -> EdgeType {
         match (first, second) {
             (CarryType::Min, CarryType::Min) => EdgeType::MinToMin,
@@ -77,17 +81,18 @@ impl EdgeType {
         }
     }
 
-    /// Whether this edge connects hashes of the same canonicality (direct orientation).
+    /// Answers whether the EdgeType is of the direct types (i.e. linkes a canonical hash with another canonical one,
+    /// or the equivalent with non-canonicals).
     pub fn is_direct(&self) -> bool {
         matches!(self, EdgeType::MinToMin | EdgeType::MaxToMax)
     }
 }
 
-/// Canonicality of a hash.
+/// This enum describes the canonicality of a hash
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CarryType {
-    /// Canonical hash (the minimum hash of the canonical/non-canonical pair).
+    /// Canonical hash (the minimum hash of the pair)
     Min,
-    /// Non-canonical hash (the maximum hash of the pair).
+    /// Non-canonical hash (the maximum hash of the pair)
     Max,
 }

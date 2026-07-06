@@ -4,48 +4,65 @@ use core::fmt;
 
 use crate::types::EdgeType;
 
-/// Contains the information stored at a graph node.
+/// Structure that contains the information of a node.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeStruct {
-    /// k-mer count (or mean count after shrinkage).
+    /// Value that reflects either the counts of one k-mer, or a
+    /// proxy value for shrunk nodes.
     pub counts: u16,
 
-    /// Ordered list of canonical k-mer hashes in this node (one per k-mer for unshrunk nodes).
+    /// List of hashes os k-mers
     pub abs_ind: Vec<u64>,
 
-    /// Internal edge direction for shrunk nodes (the orientation used when the node was created).
+    /// Inner edge for those edges result of a shrinkage
     pub innerdir: Option<EdgeType>,
 }
 
 impl NodeStruct {
-    /// Merges `other` node's k-mer list into `self`, respecting orientation.
-    ///
-    /// `tytoother` is the edge type connecting `self` → `other`.
+    /// Allows merging two nodes and their inner information
     pub fn merge(&mut self, other: &NodeStruct, tytoother: EdgeType) {
+        // First, we'll see if we have an internal edge already.
         if let Some(thisid) = self.innerdir {
+            // This is a bit more complicated...
             let thisct = thisid.get_from_and_to().0;
 
             if thisct == tytoother.get_from_and_to().0 {
+                // Great! We don't need to change nothing from this vector.
+                // Let's see now the OTHER vector...
                 if let Some(otherid) = other.innerdir {
+                    // This is a bit more complicated...
                     let otherct = otherid.get_from_and_to().0;
                     if tytoother.get_from_and_to().1 == otherct {
+                        // We can directly merge the vectors
                         self.abs_ind.extend(&other.abs_ind);
                     } else {
+                        // This is a bit more complicated: we need to INVERT
+                        // the other vector BEFORE joining them
                         let mut newvec = other.abs_ind.clone();
                         newvec.reverse();
                         self.abs_ind.extend(&newvec);
                     }
                 } else {
+                    // This is easy!
                     self.abs_ind.extend(&other.abs_ind);
                 }
             } else {
+                // This is not great, this node is currently in the opposite orientation to that
+                // of the current merge (as defined by tytoother).
+                // Thus, we need to insert whatever comes at the beginning of the vector
+
                 if let Some(otherid) = other.innerdir {
+                    // This is a bit more complicated...
                     let otherct = otherid.get_from_and_to().0;
                     if tytoother.get_from_and_to().1 == otherct {
+                        // The other shrunk node is aligned with the edge that connects it with this one.
+                        // As ours is not, we must prepend the REVERSED information of the other shrunk node.
                         let mut tmpvec = other.abs_ind.clone();
                         tmpvec.reverse();
                         self.abs_ind.splice(0..0, tmpvec.iter().cloned());
                     } else {
+                        // This is a bit more complicated: we DON'T need to reverse
+                        // the other vector BEFORE joining them, because they are already in the same order.
                         self.abs_ind.splice(0..0, other.abs_ind.iter().cloned());
                     }
                 } else {
@@ -53,22 +70,30 @@ impl NodeStruct {
                 }
             }
         } else {
+            // This is easier!
+            // Let's see if the other node has an internal edge itself
+
             if let Some(otherid) = other.innerdir {
+                // This is a bit more complicated...
                 let otherct = otherid.get_from_and_to().0;
                 if tytoother.get_from_and_to().1 == otherct {
+                    // We can directly merge the vectors
                     self.abs_ind.extend(&other.abs_ind);
                 } else {
+                    // This is a bit more complicated: we need to INVERT
+                    // the other vector BEFORE joining them
                     let mut newvec = other.abs_ind.clone();
                     newvec.reverse();
                     self.abs_ind.extend(&newvec);
                 }
             } else {
+                // This is very easy! We just have to join the vectors
                 self.abs_ind.extend(&other.abs_ind);
             }
         }
     }
 
-    /// Reverses `abs_ind` and the inner edge if the current orientation does not match `outedge`.
+    /// Checks whether it is needed to reverse the list of hashes and the inner edge.
     pub fn invert_if_needed(&mut self, outedge: EdgeType) {
         if let Some(id) = self.innerdir {
             if id.get_from_and_to().1 != outedge.get_from_and_to().0 {
@@ -78,14 +103,14 @@ impl NodeStruct {
         }
     }
 
-    /// Sets `counts` to the rounded mean of `countsvec`.
+    /// Sets the counts of the node as the mean of the vector you give the function.
     pub fn set_mean_counts(&mut self, countsvec: &[u16]) {
         self.counts = (countsvec.iter().map(|&e| e as u32).sum::<u32>() as f32
             / countsvec.len() as f32)
             .round() as u16;
     }
 
-    /// Sets the internal edge type (must be `MinToMin` or `MaxToMax`).
+    /// Sets the type of the internal edge as the one you provide the function.
     pub fn set_internal_edge(&mut self, ed: EdgeType) {
         match ed {
             EdgeType::MinToMin | EdgeType::MaxToMax => self.innerdir = Some(ed),
@@ -100,7 +125,7 @@ impl fmt::Display for NodeStruct {
     }
 }
 
-/// Edge weight in the graph — holds only the `EdgeType`.
+/// This struct contains the information of an edge in the graph, which is "empty" because it only contains the type of the edge
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EmptyEdge {
     /// Type of the edge.
