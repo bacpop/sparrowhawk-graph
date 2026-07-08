@@ -7,6 +7,7 @@ use std::io::Write;
 
 use nohash_hasher::NoHashHasher;
 use petgraph::algo::connected_components as petgraph_connected_components;
+use petgraph::algo::tarjan_scc;
 use petgraph::dot::{Config, Dot};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::{Incoming, Outgoing};
@@ -155,6 +156,22 @@ impl DbgGraph {
     pub fn node_indices(&self) -> impl Iterator<Item = NodeIndex> + '_ {
         self.inner.node_indices()
     }
+
+    /// Count nodes without incoming or outgoing neighbours.
+    pub fn isolated_node_count(&self) -> usize {
+        self.inner
+            .node_indices()
+            .filter(|node| {
+                self.inner.neighbors_directed(*node, Incoming).count() == 0
+                    && self.inner.neighbors_directed(*node, Outgoing).count() == 0
+            })
+            .count()
+    }
+
+    /// Strongly connected components, using petgraph's current backend implementation.
+    pub fn strongly_connected_components(&self) -> Vec<Vec<NodeIndex>> {
+        tarjan_scc(&self.inner)
+    }
 }
 
 // ─── Node / edge weight access ───────────────────────────────────────────────
@@ -208,6 +225,44 @@ impl DbgGraph {
             .edges_directed(n, Incoming)
             .filter(|e| e.weight().t.get_from_and_to().1 == carry)
             .map(|e| (e.source(), e.weight().t))
+            .collect()
+    }
+
+    /// First outgoing edge type for a node, in backend iteration order.
+    #[inline]
+    pub fn first_outgoing_edge_type(&self, node: NodeIndex) -> Option<EdgeType> {
+        self.inner
+            .edges_directed(node, Outgoing)
+            .next()
+            .map(|edge| edge.weight().t)
+    }
+
+    /// Outgoing edges whose source carry matches `carry`, including edge id.
+    pub fn outgoing_edges_by_carry(
+        &self,
+        node: NodeIndex,
+        carry: CarryType,
+    ) -> Vec<(EdgeIndex, NodeIndex, EdgeType)> {
+        self.inner
+            .edges_directed(node, Outgoing)
+            .filter(|edge| edge.weight().t.get_from_and_to().0 == carry)
+            .map(|edge| (edge.id(), edge.target(), edge.weight().t))
+            .collect()
+    }
+
+    /// All outgoing edges as target and edge type.
+    pub fn outgoing_edges(&self, node: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+        self.inner
+            .edges_directed(node, Outgoing)
+            .map(|edge| (edge.target(), edge.weight().t))
+            .collect()
+    }
+
+    /// All incoming edges as source and edge type.
+    pub fn incoming_edges(&self, node: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+        self.inner
+            .edges_directed(node, Incoming)
+            .map(|edge| (edge.source(), edge.weight().t))
             .collect()
     }
 
@@ -495,6 +550,83 @@ impl DbgGraph {
             .collect();
         for e in edges {
             self.inner.remove_edge(e);
+        }
+    }
+
+    /// Set an edge type by edge index.
+    #[inline]
+    pub fn set_edge_type(&mut self, edge: EdgeIndex, edge_type: EdgeType) {
+        self.inner.edge_weight_mut(edge).unwrap().t = edge_type;
+    }
+
+    /// Set the first edge type between two nodes, in backend iteration order.
+    #[inline]
+    pub fn set_first_edge_type_between(
+        &mut self,
+        from: NodeIndex,
+        to: NodeIndex,
+        edge_type: EdgeType,
+    ) {
+        let edge = self.inner.edges_connecting(from, to).next().unwrap().id();
+        self.inner.edge_weight_mut(edge).unwrap().t = edge_type;
+    }
+
+    /// Modify edge orientations after shrinking through a non-direct internal edge.
+    #[inline]
+    pub fn modify_edges_when_shrinking(
+        &mut self,
+        base_node: NodeIndex,
+        prev_node: NodeIndex,
+        internal_edge_ty: EdgeType,
+        in_edge_ind: EdgeIndex,
+        in_edge_ty: EdgeType,
+    ) {
+        log::trace!("base_node: {:?} prev_node: {:?} internal_edge_ty: {:?} in_edge_ind: {:?} in_edge_ty: {:?}",
+            base_node, prev_node, internal_edge_ty, in_edge_ind, in_edge_ty,
+        );
+        log::trace!(
+            "edges coming to the prev_node from the base_node: {:?}",
+            self.edges_between(base_node, prev_node)
+        );
+        log::trace!(
+            "edges coming to the base_node from the prev_node: {:?}",
+            self.edges_between(prev_node, base_node)
+        );
+
+        match internal_edge_ty {
+            EdgeType::MinToMax => {
+                match in_edge_ty {
+                    EdgeType::MinToMin => {
+                        self.set_edge_type(in_edge_ind, EdgeType::MinToMax);
+                        self.set_first_edge_type_between(base_node, prev_node, EdgeType::MinToMax);
+                    }
+                    EdgeType::MaxToMin => {
+                        self.set_edge_type(in_edge_ind, EdgeType::MaxToMax);
+                        self.set_first_edge_type_between(base_node, prev_node, EdgeType::MinToMin);
+                    }
+                    _ => panic!("Not expected edge type"),
+                }
+                self.node_weight_mut(base_node)
+                    .unwrap()
+                    .set_internal_edge(EdgeType::MaxToMax);
+            }
+            EdgeType::MaxToMin => {
+                match in_edge_ty {
+                    EdgeType::MaxToMax => {
+                        self.set_edge_type(in_edge_ind, EdgeType::MaxToMin);
+                        self.set_first_edge_type_between(base_node, prev_node, EdgeType::MaxToMin);
+                    }
+                    EdgeType::MinToMax => {
+                        self.set_edge_type(in_edge_ind, EdgeType::MinToMin);
+                        self.set_first_edge_type_between(base_node, prev_node, EdgeType::MaxToMax);
+                    }
+                    _ => panic!("Not expected edge type"),
+                }
+                self.node_weight_mut(base_node)
+                    .unwrap()
+                    .set_internal_edge(EdgeType::MinToMin);
+            }
+            _ => panic!("Value not expected"),
         }
     }
 }
