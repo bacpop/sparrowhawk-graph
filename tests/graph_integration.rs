@@ -109,7 +109,7 @@ fn test_graph_operations_sequence() {
     let mut graph = DbgGraph::new(25);
 
     // Build a small graph
-    let nodes: Vec<NodeIndex> = (0..5)
+    let nodes: Vec<NodeId> = (0..5)
         .map(|i| {
             graph.add_node(NodeStruct {
                 counts: 1,
@@ -145,10 +145,6 @@ fn test_empty_graph_operations() {
     assert!(gfa_string.contains("H\tVN:Z:1.0"));
     assert_eq!(graph.node_count(), 0);
     assert_eq!(graph.edge_count(), 0);
-
-    // These should return empty results rather than panic
-    let neighbors = graph.all_neighbors(NodeIndex::new(0));
-    assert!(neighbors.is_empty());
 
     // Test GFA serialization on empty graph
     let gfa_string = graph.get_gfa_string();
@@ -245,12 +241,17 @@ fn test_modify_edges_when_shrinking_min_to_max_with_min_to_min_input() {
 
     graph.add_edge(prev, base, EdgeType::MinToMin);
     graph.add_edge(base, prev, EdgeType::MaxToMax);
-    let incoming = graph.edges_between(prev, base)[0];
     let outgoing = graph.edges_between(base, prev)[0];
 
-    graph.modify_edges_when_shrinking(base, prev, EdgeType::MinToMax, incoming, EdgeType::MinToMin);
+    graph.modify_edges_when_shrinking_between(base, prev, EdgeType::MinToMax, EdgeType::MinToMin);
 
-    assert_eq!(graph.edge_weight(incoming).unwrap().t, EdgeType::MinToMax);
+    assert_eq!(
+        graph
+            .edge_weight(graph.edges_between(prev, base)[0])
+            .unwrap()
+            .t,
+        EdgeType::MinToMax
+    );
     assert_eq!(graph.edge_weight(outgoing).unwrap().t, EdgeType::MinToMax);
     assert_eq!(
         graph.node_weight(base).unwrap().innerdir,

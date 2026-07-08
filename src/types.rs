@@ -11,11 +11,15 @@ pub type Idx = usize;
 /// Type for representing the weight (count) of a k-mer.
 pub type EdgeWeight = u16;
 
-/// Type denoting the index of a node in the graph.
-pub type NodeIndex = petgraph::stable_graph::NodeIndex<Idx>;
+/// Opaque identifier for a node in the graph.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeId(pub(crate) Idx);
 
-/// Type denoting the index of an edge in the graph.
-pub type EdgeIndex = petgraph::stable_graph::EdgeIndex<Idx>;
+/// Opaque identifier for an edge in the graph.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EdgeId(pub(crate) Idx);
 
 /// Type alias for the canonical k-mer hash map produced by preprocessing.
 pub type KmerMap = HashMap<u64, HashInfoSimple, BuildHasherDefault<NoHashHasher<u64>>>;

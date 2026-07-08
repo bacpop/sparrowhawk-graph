@@ -13,10 +13,39 @@ use petgraph::visit::EdgeRef;
 use petgraph::Direction::{Incoming, Outgoing};
 
 use crate::node::{EmptyEdge, NodeStruct};
-use crate::types::{CarryType, EdgeIndex, EdgeType, HashInfoSimple, Idx, NodeIndex};
+use crate::types::{CarryType, EdgeId, EdgeType, HashInfoSimple, Idx, NodeId};
 
 /// Inner petgraph type alias.
 type Inner = petgraph::stable_graph::StableGraph<NodeStruct, EmptyEdge, petgraph::Directed, Idx>;
+type BackendNodeIndex = petgraph::stable_graph::NodeIndex<Idx>;
+type BackendEdgeIndex = petgraph::stable_graph::EdgeIndex<Idx>;
+
+#[inline]
+fn to_backend_node(node: NodeId) -> BackendNodeIndex {
+    BackendNodeIndex::new(node.0)
+}
+
+#[inline]
+fn from_backend_node(node: BackendNodeIndex) -> NodeId {
+    NodeId(node.index())
+}
+
+#[inline]
+fn to_backend_edge(edge: EdgeId) -> BackendEdgeIndex {
+    BackendEdgeIndex::new(edge.0)
+}
+
+#[inline]
+fn from_backend_edge(edge: BackendEdgeIndex) -> EdgeId {
+    EdgeId(edge.index())
+}
+
+/// Candidate outgoing edge from the start of a potential bubble.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BubbleStartEdge {
+    pub target: NodeId,
+    pub edge_type: EdgeType,
+}
 
 /// Bidirected de Bruijn graph.
 #[derive(Default)]
@@ -49,7 +78,7 @@ impl DbgGraph {
             k,
         };
 
-        let mut tmpdict: HashMap<u64, NodeIndex, BuildHasherDefault<NoHashHasher<u64>>> =
+        let mut tmpdict: HashMap<u64, BackendNodeIndex, BuildHasherDefault<NoHashHasher<u64>>> =
             HashMap::with_capacity_and_hasher(map.len(), BuildHasherDefault::default());
 
         for (h, hi) in map {
@@ -124,8 +153,8 @@ impl DbgGraph {
     }
 
     /// Insert a bare node (used in tests and programmatic construction).
-    pub fn add_node(&mut self, node: NodeStruct) -> NodeIndex {
-        self.inner.add_node(node)
+    pub fn add_node(&mut self, node: NodeStruct) -> NodeId {
+        from_backend_node(self.inner.add_node(node))
     }
 }
 
@@ -148,13 +177,13 @@ impl DbgGraph {
     }
 
     /// Whether node index `n` is still present.
-    pub fn contains_node(&self, n: NodeIndex) -> bool {
-        self.inner.contains_node(n)
+    pub fn contains_node(&self, n: NodeId) -> bool {
+        self.inner.contains_node(to_backend_node(n))
     }
 
     /// Iterator over all live node indices.
-    pub fn node_indices(&self) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.inner.node_indices()
+    pub fn node_indices(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.inner.node_indices().map(from_backend_node)
     }
 
     /// Count nodes without incoming or outgoing neighbours.
@@ -169,8 +198,11 @@ impl DbgGraph {
     }
 
     /// Strongly connected components, using petgraph's current backend implementation.
-    pub fn strongly_connected_components(&self) -> Vec<Vec<NodeIndex>> {
+    pub fn strongly_connected_components(&self) -> Vec<Vec<NodeId>> {
         tarjan_scc(&self.inner)
+            .into_iter()
+            .map(|component| component.into_iter().map(from_backend_node).collect())
+            .collect()
     }
 }
 
@@ -178,28 +210,30 @@ impl DbgGraph {
 
 impl DbgGraph {
     /// Immutable reference to node weight.
-    pub fn node_weight(&self, n: NodeIndex) -> Option<&NodeStruct> {
-        self.inner.node_weight(n)
+    pub fn node_weight(&self, n: NodeId) -> Option<&NodeStruct> {
+        self.inner.node_weight(to_backend_node(n))
     }
 
     /// Mutable reference to node weight.
-    pub fn node_weight_mut(&mut self, n: NodeIndex) -> Option<&mut NodeStruct> {
-        self.inner.node_weight_mut(n)
+    pub fn node_weight_mut(&mut self, n: NodeId) -> Option<&mut NodeStruct> {
+        self.inner.node_weight_mut(to_backend_node(n))
     }
 
     /// Immutable reference to edge weight.
-    pub fn edge_weight(&self, e: EdgeIndex) -> Option<&EmptyEdge> {
-        self.inner.edge_weight(e)
+    pub fn edge_weight(&self, e: EdgeId) -> Option<&EmptyEdge> {
+        self.inner.edge_weight(to_backend_edge(e))
     }
 
     /// Mutable reference to edge weight.
-    pub fn edge_weight_mut(&mut self, e: EdgeIndex) -> Option<&mut EmptyEdge> {
-        self.inner.edge_weight_mut(e)
+    pub fn edge_weight_mut(&mut self, e: EdgeId) -> Option<&mut EmptyEdge> {
+        self.inner.edge_weight_mut(to_backend_edge(e))
     }
 
     /// Endpoints of an edge.
-    pub fn edge_endpoints(&self, e: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
-        self.inner.edge_endpoints(e)
+    pub fn edge_endpoints(&self, e: EdgeId) -> Option<(NodeId, NodeId)> {
+        self.inner
+            .edge_endpoints(to_backend_edge(e))
+            .map(|(from, to)| (from_backend_node(from), from_backend_node(to)))
     }
 }
 
@@ -209,30 +243,30 @@ impl DbgGraph {
     /// Forward neighbours from a given canonicality origin.
     ///
     /// Replaces `out_neighbours_bi` / `out_neighbours_min` / `out_neighbours_max`.
-    pub fn forward_neighbors(&self, n: NodeIndex, carry: CarryType) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn forward_neighbors(&self, n: NodeId, carry: CarryType) -> Vec<(NodeId, EdgeType)> {
         self.inner
-            .edges_directed(n, Outgoing)
+            .edges_directed(to_backend_node(n), Outgoing)
             .filter(|e| e.weight().t.get_from_and_to().0 == carry)
-            .map(|e| (e.target(), e.weight().t))
+            .map(|e| (from_backend_node(e.target()), e.weight().t))
             .collect()
     }
 
     /// Backward neighbours arriving at a given canonicality.
     ///
     /// Replaces `in_neighbours_bi` / `in_neighbours_min` / `in_neighbours_max`.
-    pub fn backward_neighbors(&self, n: NodeIndex, carry: CarryType) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn backward_neighbors(&self, n: NodeId, carry: CarryType) -> Vec<(NodeId, EdgeType)> {
         self.inner
-            .edges_directed(n, Incoming)
+            .edges_directed(to_backend_node(n), Incoming)
             .filter(|e| e.weight().t.get_from_and_to().1 == carry)
-            .map(|e| (e.source(), e.weight().t))
+            .map(|e| (from_backend_node(e.source()), e.weight().t))
             .collect()
     }
 
     /// First outgoing edge type for a node, in backend iteration order.
     #[inline]
-    pub fn first_outgoing_edge_type(&self, node: NodeIndex) -> Option<EdgeType> {
+    pub fn first_outgoing_edge_type(&self, node: NodeId) -> Option<EdgeType> {
         self.inner
-            .edges_directed(node, Outgoing)
+            .edges_directed(to_backend_node(node), Outgoing)
             .next()
             .map(|edge| edge.weight().t)
     }
@@ -240,49 +274,71 @@ impl DbgGraph {
     /// Outgoing edges whose source carry matches `carry`, including edge id.
     pub fn outgoing_edges_by_carry(
         &self,
-        node: NodeIndex,
+        node: NodeId,
         carry: CarryType,
-    ) -> Vec<(EdgeIndex, NodeIndex, EdgeType)> {
+    ) -> Vec<(EdgeId, NodeId, EdgeType)> {
         self.inner
-            .edges_directed(node, Outgoing)
+            .edges_directed(to_backend_node(node), Outgoing)
             .filter(|edge| edge.weight().t.get_from_and_to().0 == carry)
-            .map(|edge| (edge.id(), edge.target(), edge.weight().t))
+            .map(|edge| {
+                (
+                    from_backend_edge(edge.id()),
+                    from_backend_node(edge.target()),
+                    edge.weight().t,
+                )
+            })
+            .collect()
+    }
+
+    /// Outgoing bubble candidates whose source carry matches `carry`.
+    pub fn bubble_start_edges_by_carry(
+        &self,
+        node: NodeId,
+        carry: CarryType,
+    ) -> Vec<BubbleStartEdge> {
+        self.inner
+            .edges_directed(to_backend_node(node), Outgoing)
+            .filter(|edge| edge.weight().t.get_from_and_to().0 == carry)
+            .map(|edge| BubbleStartEdge {
+                target: from_backend_node(edge.target()),
+                edge_type: edge.weight().t,
+            })
             .collect()
     }
 
     /// All outgoing edges as target and edge type.
-    pub fn outgoing_edges(&self, node: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn outgoing_edges(&self, node: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.inner
-            .edges_directed(node, Outgoing)
-            .map(|edge| (edge.target(), edge.weight().t))
+            .edges_directed(to_backend_node(node), Outgoing)
+            .map(|edge| (from_backend_node(edge.target()), edge.weight().t))
             .collect()
     }
 
     /// All incoming edges as source and edge type.
-    pub fn incoming_edges(&self, node: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn incoming_edges(&self, node: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.inner
-            .edges_directed(node, Incoming)
-            .map(|edge| (edge.source(), edge.weight().t))
+            .edges_directed(to_backend_node(node), Incoming)
+            .map(|edge| (from_backend_node(edge.source()), edge.weight().t))
             .collect()
     }
 
     /// All outgoing non-self-loop neighbours (carry-agnostic).
     ///
     /// Replaces `get_good_neighbours_bi`.
-    pub fn all_neighbors(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn all_neighbors(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.inner
-            .edges_directed(n, Outgoing)
+            .edges_directed(to_backend_node(n), Outgoing)
             .filter(|e| e.source() != e.target())
-            .map(|e| (e.target(), e.weight().t))
+            .map(|e| (from_backend_node(e.target()), e.weight().t))
             .collect()
     }
 
     /// Count of forward edges from a given canonicality.
     ///
     /// Replaces `out_degree_bi` / `out_degree_min` / `out_degree_max`.
-    pub fn forward_degree(&self, n: NodeIndex, carry: CarryType) -> usize {
+    pub fn forward_degree(&self, n: NodeId, carry: CarryType) -> usize {
         self.inner
-            .edges_directed(n, Outgoing)
+            .edges_directed(to_backend_node(n), Outgoing)
             .filter(|e| e.weight().t.get_from_and_to().0 == carry)
             .count()
     }
@@ -290,33 +346,33 @@ impl DbgGraph {
     /// Count of backward edges to a given canonicality.
     ///
     /// Replaces `in_degree_bi` / `in_degree_min` / `in_degree_max`.
-    pub fn backward_degree(&self, n: NodeIndex, carry: CarryType) -> usize {
+    pub fn backward_degree(&self, n: NodeId, carry: CarryType) -> usize {
         self.inner
-            .edges_directed(n, Incoming)
+            .edges_directed(to_backend_node(n), Incoming)
             .filter(|e| e.weight().t.get_from_and_to().1 == carry)
             .count()
     }
 
     /// Total outgoing edge count.
-    pub fn out_degree(&self, n: NodeIndex) -> usize {
+    pub fn out_degree(&self, n: NodeId) -> usize {
         self.inner
-            .neighbors_directed(n, petgraph::EdgeDirection::Outgoing)
+            .neighbors_directed(to_backend_node(n), petgraph::EdgeDirection::Outgoing)
             .count()
     }
 
     /// Total incoming edge count.
-    pub fn in_degree(&self, n: NodeIndex) -> usize {
+    pub fn in_degree(&self, n: NodeId) -> usize {
         self.inner
-            .neighbors_directed(n, petgraph::EdgeDirection::Incoming)
+            .neighbors_directed(to_backend_node(n), petgraph::EdgeDirection::Incoming)
             .count()
     }
 
     /// Count of non-self-loop outgoing edges.
     ///
     /// Replaces `get_good_connections_degree`.
-    pub fn nonself_degree(&self, n: NodeIndex) -> usize {
+    pub fn nonself_degree(&self, n: NodeId) -> usize {
         self.inner
-            .edges_directed(n, Outgoing)
+            .edges_directed(to_backend_node(n), Outgoing)
             .filter(|e| e.source() != e.target())
             .count()
     }
@@ -325,85 +381,85 @@ impl DbgGraph {
 
     /// Alias for `forward_neighbors`.
     #[inline]
-    pub fn out_neighbours_bi(&self, n: NodeIndex, ty: CarryType) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn out_neighbours_bi(&self, n: NodeId, ty: CarryType) -> Vec<(NodeId, EdgeType)> {
         self.forward_neighbors(n, ty)
     }
 
     /// Alias for `forward_neighbors(n, CarryType::Min)`.
     #[inline]
-    pub fn out_neighbours_min(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn out_neighbours_min(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.forward_neighbors(n, CarryType::Min)
     }
 
     /// Alias for `forward_neighbors(n, CarryType::Max)`.
     #[inline]
-    pub fn out_neighbours_max(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn out_neighbours_max(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.forward_neighbors(n, CarryType::Max)
     }
 
     /// Alias for `backward_neighbors`.
     #[inline]
-    pub fn in_neighbours_bi(&self, n: NodeIndex, ty: CarryType) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn in_neighbours_bi(&self, n: NodeId, ty: CarryType) -> Vec<(NodeId, EdgeType)> {
         self.backward_neighbors(n, ty)
     }
 
     /// Alias for `backward_neighbors(n, CarryType::Min)`.
     #[inline]
-    pub fn in_neighbours_min(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn in_neighbours_min(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.backward_neighbors(n, CarryType::Min)
     }
 
     /// Alias for `backward_neighbors(n, CarryType::Max)`.
     #[inline]
-    pub fn in_neighbours_max(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn in_neighbours_max(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.backward_neighbors(n, CarryType::Max)
     }
 
     /// Alias for `forward_degree`.
     #[inline]
-    pub fn out_degree_bi(&self, n: NodeIndex, ty: CarryType) -> usize {
+    pub fn out_degree_bi(&self, n: NodeId, ty: CarryType) -> usize {
         self.forward_degree(n, ty)
     }
 
     /// Alias for `forward_degree(n, CarryType::Min)`.
     #[inline]
-    pub fn out_degree_min(&self, n: NodeIndex) -> usize {
+    pub fn out_degree_min(&self, n: NodeId) -> usize {
         self.forward_degree(n, CarryType::Min)
     }
 
     /// Alias for `forward_degree(n, CarryType::Max)`.
     #[inline]
-    pub fn out_degree_max(&self, n: NodeIndex) -> usize {
+    pub fn out_degree_max(&self, n: NodeId) -> usize {
         self.forward_degree(n, CarryType::Max)
     }
 
     /// Alias for `backward_degree`.
     #[inline]
-    pub fn in_degree_bi(&self, n: NodeIndex, ty: CarryType) -> usize {
+    pub fn in_degree_bi(&self, n: NodeId, ty: CarryType) -> usize {
         self.backward_degree(n, ty)
     }
 
     /// Alias for `backward_degree(n, CarryType::Min)`.
     #[inline]
-    pub fn in_degree_min(&self, n: NodeIndex) -> usize {
+    pub fn in_degree_min(&self, n: NodeId) -> usize {
         self.backward_degree(n, CarryType::Min)
     }
 
     /// Alias for `backward_degree(n, CarryType::Max)`.
     #[inline]
-    pub fn in_degree_max(&self, n: NodeIndex) -> usize {
+    pub fn in_degree_max(&self, n: NodeId) -> usize {
         self.backward_degree(n, CarryType::Max)
     }
 
     /// Alias for `all_neighbors`.
     #[inline]
-    pub fn get_good_neighbours_bi(&self, n: NodeIndex) -> Vec<(NodeIndex, EdgeType)> {
+    pub fn get_good_neighbours_bi(&self, n: NodeId) -> Vec<(NodeId, EdgeType)> {
         self.all_neighbors(n)
     }
 
     /// Alias for `nonself_degree`.
     #[inline]
-    pub fn get_good_connections_degree(&self, n: NodeIndex) -> usize {
+    pub fn get_good_connections_degree(&self, n: NodeId) -> usize {
         self.nonself_degree(n)
     }
 }
@@ -417,28 +473,30 @@ impl DbgGraph {
     /// come from `Min`.
     ///
     /// Replaces `get_ambiguous_nodes_bi`.
-    pub fn ambiguous_nodes(&self) -> BTreeSet<NodeIndex> {
+    pub fn ambiguous_nodes(&self) -> BTreeSet<NodeId> {
         self.inner
             .node_indices()
             .filter(|n| {
-                let conns = self.nonself_degree(*n);
+                let id = from_backend_node(*n);
+                let conns = self.nonself_degree(id);
                 if conns == 0 {
                     return false;
                 } else if conns == 2 {
                     // If conns == 2, we just need to avoid a perfect intermediate kmer in a sequence of them.
-                    if self.out_degree_min(*n) == 1 {
+                    if self.out_degree_min(id) == 1 {
                         return false;
                     }
                 }
                 true
             })
+            .map(from_backend_node)
             .collect()
     }
 
     /// Entry-point nodes (all incoming edges share the same destination canonicality, or no incoming edges).
     ///
     /// Replaces `externals_bi`.
-    pub fn externals(&self) -> Vec<NodeIndex> {
+    pub fn externals(&self) -> Vec<NodeId> {
         self.inner
             .node_indices()
             .filter(|n| {
@@ -456,16 +514,17 @@ impl DbgGraph {
                 }
                 true
             })
+            .map(from_backend_node)
             .collect()
     }
 
     /// Whether node `n` has any self-loop edge.
     ///
     /// Replaces `node_has_self_loops`.
-    pub fn has_self_loop(&self, n: NodeIndex) -> bool {
+    pub fn has_self_loop(&self, n: NodeId) -> bool {
         self.inner
-            .edges_directed(n, Outgoing)
-            .any(|e| e.target() == n)
+            .edges_directed(to_backend_node(n), Outgoing)
+            .any(|e| e.target() == to_backend_node(n))
     }
 
     /// Number of weakly connected components in the graph.
@@ -477,19 +536,19 @@ impl DbgGraph {
 
     /// Alias for `ambiguous_nodes`.
     #[inline]
-    pub fn get_ambiguous_nodes_bi(&self) -> BTreeSet<NodeIndex> {
+    pub fn get_ambiguous_nodes_bi(&self) -> BTreeSet<NodeId> {
         self.ambiguous_nodes()
     }
 
     /// Alias for `externals`.
     #[inline]
-    pub fn externals_bi(&self) -> Vec<NodeIndex> {
+    pub fn externals_bi(&self) -> Vec<NodeId> {
         self.externals()
     }
 
     /// Alias for `has_self_loop`.
     #[inline]
-    pub fn node_has_self_loops(&self, n: NodeIndex) -> bool {
+    pub fn node_has_self_loops(&self, n: NodeId) -> bool {
         self.has_self_loop(n)
     }
 }
@@ -498,24 +557,36 @@ impl DbgGraph {
 
 impl DbgGraph {
     /// Remove a node and all its incident edges, returning the node data.
-    pub fn remove_node(&mut self, n: NodeIndex) -> Option<NodeStruct> {
-        self.inner.remove_node(n)
+    pub fn remove_node(&mut self, n: NodeId) -> Option<NodeStruct> {
+        self.inner.remove_node(to_backend_node(n))
     }
 
     /// Add a single directed edge.
-    pub fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, edge: EdgeType) {
-        self.inner.add_edge(from, to, EmptyEdge { t: edge });
+    pub fn add_edge(&mut self, from: NodeId, to: NodeId, edge: EdgeType) {
+        self.inner.add_edge(
+            to_backend_node(from),
+            to_backend_node(to),
+            EmptyEdge { t: edge },
+        );
     }
 
     /// Add both directions of a bidirected edge pair.
-    pub fn add_bi_edge(&mut self, from: NodeIndex, to: NodeIndex, edge: EdgeType) {
-        self.inner.add_edge(from, to, EmptyEdge { t: edge });
-        self.inner.add_edge(to, from, EmptyEdge { t: edge.rev() });
+    pub fn add_bi_edge(&mut self, from: NodeId, to: NodeId, edge: EdgeType) {
+        self.inner.add_edge(
+            to_backend_node(from),
+            to_backend_node(to),
+            EmptyEdge { t: edge },
+        );
+        self.inner.add_edge(
+            to_backend_node(to),
+            to_backend_node(from),
+            EmptyEdge { t: edge.rev() },
+        );
     }
 
     /// Remove a specific edge by index.
-    pub fn remove_edge(&mut self, e: EdgeIndex) {
-        self.inner.remove_edge(e);
+    pub fn remove_edge(&mut self, e: EdgeId) {
+        self.inner.remove_edge(to_backend_edge(e));
     }
 
     /// Remove all self-loop edges.
@@ -533,52 +604,74 @@ impl DbgGraph {
     }
 
     /// All edge indices connecting `from` → `to` (regardless of type).
-    pub fn edges_between(&self, from: NodeIndex, to: NodeIndex) -> Vec<EdgeIndex> {
+    pub fn edges_between(&self, from: NodeId, to: NodeId) -> Vec<EdgeId> {
         self.inner
-            .edges_connecting(from, to)
-            .map(|e| e.id())
+            .edges_connecting(to_backend_node(from), to_backend_node(to))
+            .map(|e| from_backend_edge(e.id()))
             .collect()
     }
 
     /// Remove all incoming and outgoing edges of node `n`.
-    pub fn remove_all_edges_of(&mut self, n: NodeIndex) {
-        let edges: Vec<EdgeIndex> = self
+    pub fn remove_all_edges_of(&mut self, n: NodeId) {
+        let edges: Vec<EdgeId> = self
             .inner
-            .edges_directed(n, Outgoing)
-            .chain(self.inner.edges_directed(n, Incoming))
-            .map(|e| e.id())
+            .edges_directed(to_backend_node(n), Outgoing)
+            .chain(self.inner.edges_directed(to_backend_node(n), Incoming))
+            .map(|e| from_backend_edge(e.id()))
             .collect();
         for e in edges {
-            self.inner.remove_edge(e);
+            self.inner.remove_edge(to_backend_edge(e));
         }
     }
 
     /// Set an edge type by edge index.
     #[inline]
-    pub fn set_edge_type(&mut self, edge: EdgeIndex, edge_type: EdgeType) {
-        self.inner.edge_weight_mut(edge).unwrap().t = edge_type;
+    pub fn set_edge_type(&mut self, edge: EdgeId, edge_type: EdgeType) {
+        self.inner.edge_weight_mut(to_backend_edge(edge)).unwrap().t = edge_type;
     }
 
     /// Set the first edge type between two nodes, in backend iteration order.
     #[inline]
-    pub fn set_first_edge_type_between(
-        &mut self,
-        from: NodeIndex,
-        to: NodeIndex,
-        edge_type: EdgeType,
-    ) {
-        let edge = self.inner.edges_connecting(from, to).next().unwrap().id();
+    pub fn set_first_edge_type_between(&mut self, from: NodeId, to: NodeId, edge_type: EdgeType) {
+        let edge = self
+            .inner
+            .edges_connecting(to_backend_node(from), to_backend_node(to))
+            .next()
+            .unwrap()
+            .id();
         self.inner.edge_weight_mut(edge).unwrap().t = edge_type;
+    }
+
+    /// Find the incoming edge and modify edge orientations after shrinking through a non-direct internal edge.
+    #[inline]
+    pub fn modify_edges_when_shrinking_between(
+        &mut self,
+        base_node: NodeId,
+        prev_node: NodeId,
+        internal_edge_ty: EdgeType,
+        in_edge_ty: EdgeType,
+    ) {
+        let edges = self.edges_between(prev_node, base_node);
+        if edges.len() > 1 {
+            panic!("More than one linking outgoing edge, this should not happen unless there are multiple connections to the same node.");
+        }
+        self.modify_edges_when_shrinking(
+            base_node,
+            prev_node,
+            internal_edge_ty,
+            edges[0],
+            in_edge_ty,
+        );
     }
 
     /// Modify edge orientations after shrinking through a non-direct internal edge.
     #[inline]
-    pub fn modify_edges_when_shrinking(
+    fn modify_edges_when_shrinking(
         &mut self,
-        base_node: NodeIndex,
-        prev_node: NodeIndex,
+        base_node: NodeId,
+        prev_node: NodeId,
         internal_edge_ty: EdgeType,
-        in_edge_ind: EdgeIndex,
+        in_edge_ind: EdgeId,
         in_edge_ty: EdgeType,
     ) {
         log::trace!("base_node: {:?} prev_node: {:?} internal_edge_ty: {:?} in_edge_ind: {:?} in_edge_ty: {:?}",
@@ -638,42 +731,13 @@ impl DbgGraph {
     ///
     /// The caller is responsible for edge rewiring and finalising `set_mean_counts`,
     /// `set_internal_edge`, and `invert_if_needed` on `parent`.
-    pub fn merge_nodes(
-        &mut self,
-        parent: NodeIndex,
-        child: NodeIndex,
-        edge: EdgeType,
-    ) -> NodeStruct {
-        let child_data = self.inner.remove_node(child).unwrap();
+    pub fn merge_nodes(&mut self, parent: NodeId, child: NodeId, edge: EdgeType) -> NodeStruct {
+        let child_data = self.inner.remove_node(to_backend_node(child)).unwrap();
         self.inner
-            .node_weight_mut(parent)
+            .node_weight_mut(to_backend_node(parent))
             .unwrap()
             .merge(&child_data, edge);
         child_data
-    }
-}
-
-// ─── Inner graph access ──────────────────────────────────────────────────────
-
-impl DbgGraph {
-    /// Read-only access to the underlying petgraph `StableGraph`.
-    ///
-    /// Used by algorithms (e.g. `tarjan_scc`, `connected_components`) that operate directly on
-    /// petgraph types and have no wrapper alternative.
-    pub fn inner_graph(
-        &self,
-    ) -> &petgraph::stable_graph::StableGraph<NodeStruct, EmptyEdge, petgraph::Directed, Idx> {
-        &self.inner
-    }
-
-    /// Mutable access to the underlying petgraph `StableGraph`.
-    ///
-    /// Use sparingly — prefer the higher-level methods above.
-    pub fn inner_graph_mut(
-        &mut self,
-    ) -> &mut petgraph::stable_graph::StableGraph<NodeStruct, EmptyEdge, petgraph::Directed, Idx>
-    {
-        &mut self.inner
     }
 }
 
@@ -987,7 +1051,8 @@ mod tests {
         let node_idx = graph.add_node(node_data);
 
         assert!(graph.contains_node(node_idx));
-        assert!(!graph.contains_node(NodeIndex::new(999)));
+        graph.remove_node(node_idx);
+        assert!(!graph.contains_node(node_idx));
     }
 
     #[test]

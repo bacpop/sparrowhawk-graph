@@ -4,11 +4,9 @@ pub mod graph;
 pub mod node;
 pub mod types;
 
-pub use graph::DbgGraph;
+pub use graph::{BubbleStartEdge, DbgGraph};
 pub use node::{EmptyEdge, NodeStruct};
-pub use types::{
-    CarryType, EdgeIndex, EdgeType, EdgeWeight, HashInfoSimple, Idx, KmerMap, NodeIndex,
-};
+pub use types::{CarryType, EdgeId, EdgeType, EdgeWeight, HashInfoSimple, Idx, KmerMap, NodeId};
 
 /// Serialized representation of a single contig (ordered list of node data).
 pub type SerializedContig = Vec<NodeStruct>;
