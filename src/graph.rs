@@ -791,14 +791,18 @@ impl DbgGraph {
         // Given the duality of the graph, to do the exportation of it as GFA, it is enough to assume that e.g. the canonical hashes represent the direct strand.
         // With that, the resulting nodes and edges will represent, by construction, correctly both strands.
 
-        // Add nodes
+        // Add nodes.
+        //
+        // `LN` is the segment LENGTH and `KC` the k-mer COUNT: these two arguments used to be the other
+        // way round, so every tool reading these files (Bandage, …) saw the coverage as the length and
+        // vice versa. `get_gfa2_string` below has always been right.
         self.inner.node_indices().for_each(|ni| {
             let tmpw = self.inner.node_weight(ni).unwrap();
             output.push_str(&format!(
                 "S\t{}\t*\tLN:i:{}\tKC:i:{}\n",
                 ni.index(),
-                tmpw.counts,
-                self.k + tmpw.abs_ind.len() - 1
+                self.k + tmpw.abs_ind.len() - 1,
+                tmpw.counts
             ));
         });
 
