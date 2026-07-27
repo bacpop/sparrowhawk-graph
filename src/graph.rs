@@ -598,7 +598,7 @@ impl DbgGraph {
     }
 
     /// Remove all nodes whose count is below `min`.
-    pub fn retain_nodes_by_count(&mut self, min: u16) {
+    pub fn retain_nodes_by_count(&mut self, min: u32) {
         self.inner
             .retain_nodes(|g, n| g.node_weight(n).unwrap().counts >= min);
     }

@@ -9,7 +9,7 @@ use nohash_hasher::NoHashHasher;
 pub type Idx = usize;
 
 /// Type for representing the weight (count) of a k-mer.
-pub type EdgeWeight = u16;
+pub type EdgeWeight = u32;
 
 /// Opaque identifier for a node in the graph.
 #[repr(transparent)]
@@ -35,7 +35,11 @@ pub struct HashInfoSimple {
     /// Neighbours found, if any, posterior to this k-mer.
     pub post: Vec<(u64, EdgeType)>,
     /// Count of this k-mer.
-    pub counts: u16,
+    ///
+    /// `u32`, not `u16`: on real high-coverage libraries short high-copy elements (E. coli REP/BIME,
+    /// S. pneumoniae BOX) exceed 65,535 sightings and silently clipped. Widening is free — struct
+    /// padding absorbs it.
+    pub counts: u32,
 }
 
 /// Enum that describes the type of one edge of the graph (essentially,

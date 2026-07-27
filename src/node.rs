@@ -9,7 +9,10 @@ use crate::types::EdgeType;
 pub struct NodeStruct {
     /// Value that reflects either the counts of one k-mer, or a
     /// proxy value for shrunk nodes.
-    pub counts: u16,
+    ///
+    /// `u32`, not `u16`: see `HashInfoSimple::counts`. At 186x single-copy coverage a `u16` clips at
+    /// ~352 genomic copies, which real repeat families exceed.
+    pub counts: u32,
 
     /// List of hashes os k-mers
     pub abs_ind: Vec<u64>,
@@ -104,10 +107,10 @@ impl NodeStruct {
     }
 
     /// Sets the counts of the node as the mean of the vector you give the function.
-    pub fn set_mean_counts(&mut self, countsvec: &[u16]) {
-        self.counts = (countsvec.iter().map(|&e| e as u32).sum::<u32>() as f32
-            / countsvec.len() as f32)
-            .round() as u16;
+    pub fn set_mean_counts(&mut self, countsvec: &[u32]) {
+        self.counts = (countsvec.iter().map(|&e| e as u64).sum::<u64>() as f64
+            / countsvec.len() as f64)
+            .round() as u32;
     }
 
     /// Sets the type of the internal edge as the one you provide the function.
