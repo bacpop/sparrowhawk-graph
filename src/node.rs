@@ -9,9 +9,6 @@ use crate::types::EdgeType;
 pub struct NodeStruct {
     /// Value that reflects either the counts of one k-mer, or a
     /// proxy value for shrunk nodes.
-    ///
-    /// `u32`, not `u16`: see `HashInfoSimple::counts`. At 186x single-copy coverage a `u16` clips at
-    /// ~352 genomic copies, which real repeat families exceed.
     pub counts: u32,
 
     /// List of hashes os k-mers

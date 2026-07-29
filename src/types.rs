@@ -35,10 +35,6 @@ pub struct HashInfoSimple {
     /// Neighbours found, if any, posterior to this k-mer.
     pub post: Vec<(u64, EdgeType)>,
     /// Count of this k-mer.
-    ///
-    /// `u32`, not `u16`: on real high-coverage libraries short high-copy elements (E. coli REP/BIME,
-    /// S. pneumoniae BOX) exceed 65,535 sightings and silently clipped. Widening is free — struct
-    /// padding absorbs it.
     pub counts: u32,
 }
 
