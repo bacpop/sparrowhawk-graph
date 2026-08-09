@@ -33,17 +33,17 @@ Current **main features**:
 - Only four dependencies ([petgraph](https://docs.rs/petgraph/latest/petgraph), [nohash-hasher](https://docs.rs/nohash-hasher/latest/nohash_hasher/), [log](https://docs.rs/log/latest/log/), and [stacker](https://docs.rs/stacker/latest/stacker/)), and compilation both to native and WebAssembly targets.
 
 # Installation
-This crate is not yet published on crates.io: it is meant to be used as a git dependency,
+This crate is not yet published on crates.io: it is meant to be used as a git dependency. To get an in principle working version (up to some degree), always pin a versioned tag, e.g.:
 
 ```toml
 [dependencies]
-sparrowhawk-graph = { git = "https://github.com/bacpop/sparrowhawk-graph.git" }
+sparrowhawk-graph = { git = "https://github.com/bacpop/sparrowhawk-graph.git", tag = "vX.Y.Z" }
 ```
 
-To compile it from source you will need the [rust toolchain](https://www.rust-lang.org/tools/install) installed in your system. Development has been done only on x86_64 GNU/Linux-based systems, and most surely will probably stay that way (i.e. no other systems have been tested).
+To compile it from source you will need the [rust toolchain](https://www.rust-lang.org/tools/install) installed in your system. Development has been done only on x86_64 GNU/Linux-based systems, and most surely will probably stay that way (i.e. no other systems have been tested). Again, always clone a versioned tag, e.g.:
 
 ```
-git clone https://github.com/bacpop/sparrowhawk-graph.git
+git clone --branch vX.Y.Z https://github.com/bacpop/sparrowhawk-graph.git
 cd sparrowhawk-graph
 cargo build --release
 ```
