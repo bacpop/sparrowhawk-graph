@@ -4,7 +4,7 @@ pub mod graph;
 pub mod node;
 pub mod types;
 
-pub use graph::{BubbleStartEdge, DbgGraph};
+pub use graph::{BubbleStartEdge, DbgGraph, GraphValidationIssue, GraphValidationReport};
 pub use node::{EmptyEdge, NodeStruct};
 pub use types::{CarryType, EdgeId, EdgeType, EdgeWeight, HashInfoSimple, Idx, KmerMap, NodeId};
 

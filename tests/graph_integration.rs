@@ -160,6 +160,97 @@ fn test_public_api_access() {
 }
 
 #[test]
+fn test_validate_accepts_paired_connections() {
+    let mut graph = DbgGraph::new(31);
+    let from = graph.add_node(graph_test_node(1, 0));
+    let to = graph.add_node(graph_test_node(1, 1));
+
+    graph.add_bi_edge(from, to, EdgeType::MinToMin);
+    graph.add_bi_edge(from, to, EdgeType::MaxToMin);
+
+    assert_eq!(graph.validate(), Ok(()));
+}
+
+#[test]
+fn test_validate_reports_unpaired_and_wrong_type_edges() {
+    let mut graph = DbgGraph::new(31);
+    let from = graph.add_node(graph_test_node(1, 0));
+    let to = graph.add_node(graph_test_node(1, 1));
+    graph.add_edge(from, to, EdgeType::MinToMin);
+    graph.add_edge(to, from, EdgeType::MinToMin);
+
+    let Err(report) = graph.validate() else {
+        panic!("an incorrectly typed reverse edge must fail validation");
+    };
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .filter(|issue| matches!(issue, GraphValidationIssue::UnpairedEdge { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn test_validate_handles_self_loops_and_duplicates() {
+    let mut paired_loop = DbgGraph::new(31);
+    let node = paired_loop.add_node(graph_test_node(1, 0));
+    paired_loop.add_bi_edge(node, node, EdgeType::MinToMin);
+    assert_eq!(paired_loop.validate(), Ok(()));
+
+    let mut unpaired_loop = DbgGraph::new(31);
+    let node = unpaired_loop.add_node(graph_test_node(1, 0));
+    unpaired_loop.add_edge(node, node, EdgeType::MinToMin);
+    let Err(report) = unpaired_loop.validate() else {
+        panic!("an unpaired self-loop must fail validation");
+    };
+    assert!(report
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, GraphValidationIssue::UnpairedEdge { .. })));
+
+    let mut duplicates = DbgGraph::new(31);
+    let from = duplicates.add_node(graph_test_node(1, 0));
+    let to = duplicates.add_node(graph_test_node(1, 1));
+    duplicates.add_bi_edge(from, to, EdgeType::MinToMin);
+    duplicates.add_bi_edge(from, to, EdgeType::MinToMin);
+    let Err(report) = duplicates.validate() else {
+        panic!("identical parallel edges must fail validation");
+    };
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .filter(|issue| matches!(issue, GraphValidationIssue::DuplicateEdge { .. }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn test_validate_reports_all_connection_issues() {
+    let mut graph = DbgGraph::new(31);
+    let from = graph.add_node(graph_test_node(1, 0));
+    let to = graph.add_node(graph_test_node(1, 1));
+    graph.add_edge(from, to, EdgeType::MinToMin);
+    graph.add_edge(from, to, EdgeType::MinToMin);
+
+    let Err(report) = graph.validate() else {
+        panic!("the malformed graph must fail validation");
+    };
+    assert!(report.issues.len() >= 3);
+    assert!(report
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, GraphValidationIssue::DuplicateEdge { .. })));
+    assert!(report
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, GraphValidationIssue::UnpairedEdge { .. })));
+}
+
+#[test]
 fn test_graph_operations_sequence() {
     // Test a sequence of operations that might be used in real scenarios
     let mut graph = DbgGraph::new(25);

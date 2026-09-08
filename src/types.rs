@@ -41,7 +41,7 @@ pub struct HashInfoSimple {
 /// Enum that describes the type of one edge of the graph (essentially,
 /// from which hash it comes (either canonical/minimum or non-canonical/maximum)
 /// and with what it is linked (again, either min/max).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EdgeType {
     /// Links canonical hash to canonical hash
     MinToMin,

@@ -1,7 +1,8 @@
 //! `DbgGraph`: bidirected de Bruijn graph built on top of petgraph's `StableGraph`.
 
-use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io::Write;
 
@@ -9,7 +10,7 @@ use nohash_hasher::NoHashHasher;
 use petgraph::algo::connected_components as petgraph_connected_components;
 use petgraph::algo::tarjan_scc;
 use petgraph::dot::{Config, Dot};
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::Direction::{Incoming, Outgoing};
 
 use crate::node::{EmptyEdge, NodeStruct};
@@ -46,6 +47,51 @@ pub struct BubbleStartEdge {
     pub target: NodeId,
     pub edge_type: EdgeType,
 }
+
+/// A connection invariant violated by a graph.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GraphValidationIssue {
+    /// A directed edge has fewer reverse-type partners than its multiplicity requires.
+    UnpairedEdge {
+        edge_id: EdgeId,
+        from: NodeId,
+        to: NodeId,
+        edge_type: EdgeType,
+    },
+    /// More than one identical directed edge connects the same pair of nodes.
+    DuplicateEdge {
+        from: NodeId,
+        to: NodeId,
+        edge_type: EdgeType,
+        count: usize,
+    },
+}
+
+/// All connection invariant violations found by [`DbgGraph::validate`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GraphValidationReport {
+    /// Issues are reported in deterministic connection/edge order.
+    pub issues: Vec<GraphValidationIssue>,
+}
+
+impl GraphValidationReport {
+    /// Whether validation found no issues.
+    pub fn is_empty(&self) -> bool {
+        self.issues.is_empty()
+    }
+}
+
+impl fmt::Display for GraphValidationReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "graph validation failed with {} issue(s)",
+            self.issues.len()
+        )
+    }
+}
+
+impl std::error::Error for GraphValidationReport {}
 
 /// Bidirected de Bruijn graph.
 #[derive(Default)]
@@ -234,6 +280,58 @@ impl DbgGraph {
         self.inner
             .edge_endpoints(to_backend_edge(e))
             .map(|(from, to)| (from_backend_node(from), from_backend_node(to)))
+    }
+
+    /// Validate all directed connections in the graph.
+    ///
+    /// Every edge must have a reverse edge with the type returned by [`EdgeType::rev`], with
+    /// multiplicity taken into account. Identical parallel edges are reported as duplicates.
+    /// Self-loops are valid when their reverse-type multiplicity is present.
+    ///
+    /// The validator checks graph topology only; it cannot verify k-mer overlap because the graph
+    /// stores hashes rather than the underlying sequences.
+    pub fn validate(&self) -> Result<(), GraphValidationReport> {
+        let mut connections: BTreeMap<(NodeId, NodeId, EdgeType), Vec<EdgeId>> = BTreeMap::new();
+
+        for edge in self.inner.edge_references() {
+            let from = from_backend_node(edge.source());
+            let to = from_backend_node(edge.target());
+            let edge_id = from_backend_edge(edge.id());
+            connections
+                .entry((from, to, edge.weight().t))
+                .or_default()
+                .push(edge_id);
+        }
+
+        let mut issues = Vec::new();
+        for (&(from, to, edge_type), edge_ids) in &connections {
+            if edge_ids.len() > 1 {
+                issues.push(GraphValidationIssue::DuplicateEdge {
+                    from,
+                    to,
+                    edge_type,
+                    count: edge_ids.len(),
+                });
+            }
+
+            let reverse_count = connections
+                .get(&(to, from, edge_type.rev()))
+                .map_or(0, Vec::len);
+            for &edge_id in edge_ids.iter().skip(reverse_count) {
+                issues.push(GraphValidationIssue::UnpairedEdge {
+                    edge_id,
+                    from,
+                    to,
+                    edge_type,
+                });
+            }
+        }
+
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(GraphValidationReport { issues })
+        }
     }
 }
 
