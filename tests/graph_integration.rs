@@ -151,7 +151,7 @@ fn test_empty_graph_operations() {
     assert!(gfa_string.contains("H\tVN:Z:1.0"));
 }
 
-fn graph_test_node(counts: u16, abs_ind: u64) -> NodeStruct {
+fn graph_test_node(counts: u32, abs_ind: u64) -> NodeStruct {
     NodeStruct {
         counts,
         abs_ind: vec![abs_ind],
