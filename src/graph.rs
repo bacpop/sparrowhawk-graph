@@ -367,7 +367,10 @@ impl DbgGraph {
             .count()
     }
 
-    /// Count of non-self-loop outgoing edges.
+    /// Count outgoing non-self-loop edges.
+    ///
+    /// This is the ordinary connection count used by path and collapse helpers. It is not the
+    /// total edge count used by `ambiguous_nodes()`.
     ///
     /// Replaces `get_good_connections_degree`.
     pub fn nonself_degree(&self, n: NodeId) -> usize {
@@ -469,24 +472,62 @@ impl DbgGraph {
 impl DbgGraph {
     /// Nodes that form junctions or path starts/ends in a bidirected graph.
     ///
-    /// A node is *ambiguous* unless it has exactly two non-self-loop outgoing edges and both
-    /// come from `Min`.
+    /// Nodes without self-loops retain the ordinary rule: exactly two outgoing non-self edges
+    /// with one Min-origin edge are treated as a straight intermediate path; all other non-empty
+    /// patterns are ambiguous.
+    ///
+    /// A node with a self-loop is ambiguous only when it also has at least one outgoing Min-origin
+    /// edge to a different node. A self-loop by itself, or a self-loop with only non-Min outgoing
+    /// edges, is not ambiguous. Self-loop edges remain excluded from ordinary neighbour lists.
     ///
     /// Replaces `get_ambiguous_nodes_bi`.
     pub fn ambiguous_nodes(&self) -> BTreeSet<NodeId> {
         self.inner
             .node_indices()
             .filter(|n| {
-                let id = from_backend_node(*n);
-                let conns = self.nonself_degree(id);
-                if conns == 0 {
-                    return false;
-                } else if conns == 2 {
-                    // If conns == 2, we just need to avoid a perfect intermediate kmer in a sequence of them.
-                    if self.out_degree_min(id) == 1 {
-                        return false;
+                let mut nonself_connections = 0usize;
+                let mut nonself_min_connections = 0usize;
+                let mut has_self_loop = false;
+
+                for edge in self.inner.edges_directed(*n, Outgoing) {
+                    if edge.source() == edge.target() {
+                        has_self_loop = true;
+
+                        // A self-loop is ambiguous only if a previously observed
+                        // non-self Min edge already exists.
+                        if nonself_min_connections > 0 {
+                            return true;
+                        }
+                        continue;
+                    }
+
+                    nonself_connections += 1;
+
+                    if edge.weight().t.get_from_and_to().0 == CarryType::Min {
+                        nonself_min_connections += 1;
+
+                        // A non-self Min edge plus a self-loop makes this node
+                        // an ambiguity boundary, regardless of other edges.
+                        if has_self_loop {
+                            return true;
+                        }
                     }
                 }
+
+                // A self-loop by itself, or with only non-Min non-self edges,
+                // is not ambiguous under the current criterion.
+                if has_self_loop {
+                    return false;
+                }
+
+                if nonself_connections == 0 {
+                    return false;
+                }
+
+                if nonself_connections == 2 {
+                    return nonself_min_connections != 1;
+                }
+
                 true
             })
             .map(from_backend_node)

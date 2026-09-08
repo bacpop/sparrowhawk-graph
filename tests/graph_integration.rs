@@ -216,6 +216,28 @@ fn graph_test_node(counts: u32, abs_ind: u64) -> NodeStruct {
 }
 
 #[test]
+fn test_self_loop_ambiguity_criterion() {
+    let mut loop_only = DbgGraph::new(31);
+    let loop_node = loop_only.add_node(graph_test_node(1, 0));
+    loop_only.add_bi_edge(loop_node, loop_node, EdgeType::MinToMin);
+    assert!(!loop_only.ambiguous_nodes().contains(&loop_node));
+
+    let mut max_loop = DbgGraph::new(31);
+    let max_loop_node = max_loop.add_node(graph_test_node(1, 0));
+    let max_target = max_loop.add_node(graph_test_node(1, 1));
+    max_loop.add_edge(max_loop_node, max_loop_node, EdgeType::MaxToMax);
+    max_loop.add_edge(max_loop_node, max_target, EdgeType::MaxToMax);
+    assert!(!max_loop.ambiguous_nodes().contains(&max_loop_node));
+
+    let mut min_loop = DbgGraph::new(31);
+    let min_loop_node = min_loop.add_node(graph_test_node(1, 0));
+    let min_target = min_loop.add_node(graph_test_node(1, 1));
+    min_loop.add_bi_edge(min_loop_node, min_loop_node, EdgeType::MinToMin);
+    min_loop.add_edge(min_loop_node, min_target, EdgeType::MinToMin);
+    assert!(min_loop.ambiguous_nodes().contains(&min_loop_node));
+}
+
+#[test]
 fn test_exporters_complete_partial_writes() {
     let graph = DbgGraph::new(31);
 
