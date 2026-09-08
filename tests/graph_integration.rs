@@ -5,6 +5,62 @@ use nohash_hasher::NoHashHasher;
 use sparrowhawk_graph::*;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
+use std::io::{self, Write};
+
+struct TestWriter {
+    bytes: Vec<u8>,
+    max_write: usize,
+    write_error: bool,
+    flush_error: bool,
+}
+
+impl TestWriter {
+    fn chunked(max_write: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_write,
+            write_error: false,
+            flush_error: false,
+        }
+    }
+
+    fn failing_write() -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_write: 1,
+            write_error: true,
+            flush_error: false,
+        }
+    }
+
+    fn failing_flush() -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_write: usize::MAX,
+            write_error: false,
+            flush_error: true,
+        }
+    }
+}
+
+impl Write for TestWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.write_error {
+            return Err(io::Error::other("test write failure"));
+        }
+        let n = buf.len().min(self.max_write);
+        self.bytes.extend_from_slice(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if self.flush_error {
+            Err(io::Error::other("test flush failure"))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 #[test]
 fn test_complete_graph_workflow() {
@@ -157,6 +213,51 @@ fn graph_test_node(counts: u32, abs_ind: u64) -> NodeStruct {
         abs_ind: vec![abs_ind],
         innerdir: None,
     }
+}
+
+#[test]
+fn test_exporters_complete_partial_writes() {
+    let graph = DbgGraph::new(31);
+
+    let mut dot = TestWriter::chunked(2);
+    graph.write_to_dot(&mut dot);
+    assert_eq!(dot.bytes, graph.get_dot_string().as_bytes());
+
+    let mut gfa = TestWriter::chunked(2);
+    graph.write_to_gfa(&mut gfa);
+    assert_eq!(gfa.bytes, graph.get_gfa_string().as_bytes());
+
+    let mut gfa2 = TestWriter::chunked(2);
+    graph.write_to_gfa2(&mut gfa2);
+    assert_eq!(gfa2.bytes, graph.get_gfa2_string().as_bytes());
+}
+
+#[test]
+#[should_panic(expected = "failed to write DOT graph")]
+fn test_dot_export_reports_write_errors() {
+    let graph = DbgGraph::new(31);
+    graph.write_to_dot(&mut TestWriter::failing_write());
+}
+
+#[test]
+#[should_panic(expected = "failed to write GFA1 graph")]
+fn test_gfa_export_reports_write_errors() {
+    let graph = DbgGraph::new(31);
+    graph.write_to_gfa(&mut TestWriter::failing_write());
+}
+
+#[test]
+#[should_panic(expected = "failed to write GFA2 graph")]
+fn test_gfa2_export_reports_write_errors() {
+    let graph = DbgGraph::new(31);
+    graph.write_to_gfa2(&mut TestWriter::failing_write());
+}
+
+#[test]
+#[should_panic(expected = "failed to flush GFA1 graph")]
+fn test_gfa_export_reports_flush_errors() {
+    let graph = DbgGraph::new(31);
+    graph.write_to_gfa(&mut TestWriter::failing_flush());
 }
 
 #[test]

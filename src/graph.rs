@@ -747,7 +747,10 @@ impl DbgGraph {
     /// Write graph to a DOT format writer.
     pub fn write_to_dot<W: Write>(&self, f: &mut W) {
         let output = self.get_dot_string();
-        let _ = f.write(output.as_bytes());
+        f.write_all(output.as_bytes())
+            .unwrap_or_else(|error| panic!("failed to write DOT graph: {error}"));
+        f.flush()
+            .unwrap_or_else(|error| panic!("failed to flush DOT graph: {error}"));
     }
 
     /// Return graph as a DOT format string.
@@ -781,7 +784,10 @@ impl DbgGraph {
     /// Write graph to a GFAv1 format writer.
     pub fn write_to_gfa<W: Write>(&self, f: &mut W) {
         let output = self.get_gfa_string();
-        let _ = f.write(output.as_bytes());
+        f.write_all(output.as_bytes())
+            .unwrap_or_else(|error| panic!("failed to write GFA1 graph: {error}"));
+        f.flush()
+            .unwrap_or_else(|error| panic!("failed to flush GFA1 graph: {error}"));
     }
 
     /// Return graph as a GFAv1 string.
@@ -837,7 +843,10 @@ impl DbgGraph {
     /// Write graph to a GFAv2 format writer.
     pub fn write_to_gfa2<W: Write>(&self, f: &mut W) {
         let output = self.get_gfa2_string();
-        let _ = f.write(output.as_bytes());
+        f.write_all(output.as_bytes())
+            .unwrap_or_else(|error| panic!("failed to write GFA2 graph: {error}"));
+        f.flush()
+            .unwrap_or_else(|error| panic!("failed to flush GFA2 graph: {error}"));
     }
 
     /// Return graph as a GFAv2 string.
