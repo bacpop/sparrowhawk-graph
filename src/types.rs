@@ -11,12 +11,18 @@ pub type Idx = usize;
 /// Type for representing the weight (count) of a k-mer.
 pub type EdgeWeight = u32;
 
-/// Opaque identifier for a node in the graph.
+/// Opaque, copyable handle identifying a node in the graph.
+///
+/// The handle is stable for the lifetime of its node, can be stored and passed by value, and is
+/// meaningful only for the graph in which it was created while that node exists.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub(crate) Idx);
 
-/// Opaque identifier for an edge in the graph.
+/// Opaque, copyable handle identifying an edge in the graph.
+///
+/// The handle is stable for the lifetime of its edge, can be stored and passed by value, and is
+/// meaningful only for the graph in which it was created while that edge exists.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EdgeId(pub(crate) Idx);
