@@ -667,6 +667,10 @@ impl DbgGraph {
     }
 
     /// Number of weakly connected components in the graph.
+    ///
+    /// `StableGraph` cannot be passed directly to petgraph's component algorithm because it does
+    /// not implement `NodeCompactIndexable`: removed nodes leave holes in its index space. The
+    /// conversion below compacts node indices before running the union-find algorithm.
     pub fn connected_components(&self) -> usize {
         petgraph_connected_components(&petgraph::graph::Graph::from(self.inner.clone()))
     }

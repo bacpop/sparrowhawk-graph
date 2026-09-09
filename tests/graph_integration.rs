@@ -388,6 +388,24 @@ fn test_isolated_node_count() {
 }
 
 #[test]
+fn test_connected_components_handles_stable_graph_holes() {
+    let mut graph = DbgGraph::new(31);
+    let node1 = graph.add_node(graph_test_node(1, 0));
+    let node2 = graph.add_node(graph_test_node(1, 1));
+    let node3 = graph.add_node(graph_test_node(1, 2));
+    let node4 = graph.add_node(graph_test_node(1, 3));
+
+    graph.add_bi_edge(node1, node2, EdgeType::MinToMin);
+    graph.add_bi_edge(node3, node4, EdgeType::MinToMin);
+    graph.remove_node(node2);
+
+    assert_eq!(graph.connected_components(), 2);
+    assert_eq!(graph.connected_components(), 2);
+    assert_eq!(graph.node_count(), 3);
+    assert_eq!(graph.edge_count(), 2);
+}
+
+#[test]
 fn test_first_outgoing_edge_type() {
     let mut graph = DbgGraph::new(31);
     let node1 = graph.add_node(graph_test_node(1, 0));
