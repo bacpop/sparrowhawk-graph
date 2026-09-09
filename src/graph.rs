@@ -375,6 +375,9 @@ impl DbgGraph {
     }
 
     /// First outgoing edge type for a node, in backend iteration order.
+    ///
+    /// The returned edge is whichever edge petgraph yields first; no semantic ordering is
+    /// guaranteed.
     #[inline]
     pub fn first_outgoing_edge_type(&self, node: NodeId) -> Option<EdgeType> {
         self.inner
@@ -728,6 +731,9 @@ impl DbgGraph {
     }
 
     /// Add both directions of a bidirected edge pair.
+    ///
+    /// This method does not check whether an edge pair already connects these nodes; callers must
+    /// avoid duplicate insertion.
     pub fn add_bi_edge(&mut self, from: NodeId, to: NodeId, edge: EdgeType) {
         self.inner.add_edge(
             to_backend_node(from),

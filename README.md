@@ -30,7 +30,7 @@ Current **main features**:
 - Strand-aware traversal and topology queries: forward/backward neighbours and degrees by canonicity, ambiguous (junction) nodes, external nodes, self-loops, and connected components.
 - The mutation primitives used by the assembler's graph-simplification stages: node merging for path shrinking, bidirected edge insertion, edge retyping, and node/edge removal.
 - Graph exportation in [DOT](https://en.wikipedia.org/wiki/DOT_%28graph_description_language%29) and [GFA](https://gfa-spec.github.io/GFA-spec/) versions 1.1 and 2.
-- Only four dependencies ([petgraph](https://docs.rs/petgraph/latest/petgraph), [nohash-hasher](https://docs.rs/nohash-hasher/latest/nohash_hasher/), [log](https://docs.rs/log/latest/log/), and [stacker](https://docs.rs/stacker/latest/stacker/)), and compilation both to native and WebAssembly targets.
+- Only three dependencies ([petgraph](https://docs.rs/petgraph/latest/petgraph), [nohash-hasher](https://docs.rs/nohash-hasher/latest/nohash_hasher/), and [log](https://docs.rs/log/latest/log/)), and compilation both to native and WebAssembly targets.
 
 # Installation
 This crate is not yet published on crates.io: it is meant to be used as a git dependency. To get an in principle working version (up to some degree), always pin a versioned tag, e.g.:

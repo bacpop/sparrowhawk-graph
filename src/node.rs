@@ -120,10 +120,14 @@ impl NodeStruct {
     }
 
     /// Sets the type of the internal edge as the one you provide the function.
+    ///
+    /// Internal edges must be direct: only `MinToMin` and `MaxToMax` are valid.
     pub fn set_internal_edge(&mut self, ed: EdgeType) {
         match ed {
             EdgeType::MinToMin | EdgeType::MaxToMax => self.innerdir = Some(ed),
-            _ => panic!("Non-valid internal edge!"),
+            _ => panic!(
+                "invalid internal edge {ed:?}: internal edges must be direct (MinToMin or MaxToMax)"
+            ),
         }
     }
 }
@@ -158,6 +162,13 @@ mod tests {
         let mut node = node();
         node.set_mean_counts(&[2, 4]);
         assert_eq!(node.counts, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid internal edge MinToMax: internal edges must be direct")]
+    fn set_internal_edge_rejects_non_direct_edges() {
+        let mut node = node();
+        node.set_internal_edge(EdgeType::MinToMax);
     }
 }
 
