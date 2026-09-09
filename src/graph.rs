@@ -94,10 +94,15 @@ impl fmt::Display for GraphValidationReport {
 impl std::error::Error for GraphValidationReport {}
 
 /// Bidirected de Bruijn graph.
-#[derive(Default)]
 pub struct DbgGraph {
     inner: Inner,
     k: usize,
+}
+
+impl Default for DbgGraph {
+    fn default() -> Self {
+        Self::new(1)
+    }
 }
 
 // ─── Construction ────────────────────────────────────────────────────────────
@@ -1094,6 +1099,27 @@ mod tests {
         assert_eq!(graph.node_count(), 1);
         assert!(graph.contains_node(node_idx));
         assert_eq!(graph.node_weight(node_idx), Some(&node_data));
+    }
+
+    #[test]
+    fn test_default_graph_uses_k_one_and_exports_empty_nodes() {
+        let mut graph = DbgGraph::default();
+        let node1 = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![],
+            innerdir: None,
+        });
+        let node2 = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![],
+            innerdir: None,
+        });
+        graph.add_bi_edge(node1, node2, EdgeType::MinToMin);
+
+        assert_eq!(graph.k(), 1);
+        assert!(graph.get_gfa_string().contains("LN:i:0"));
+        assert!(graph.get_gfa_string().contains("\t0M"));
+        assert!(graph.get_gfa2_string().contains("\t0$"));
     }
 
     #[test]
