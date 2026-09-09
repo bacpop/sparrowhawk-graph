@@ -898,8 +898,16 @@ impl DbgGraph {
 impl DbgGraph {
     /// Merge `child` into `parent`, remove `child` from the graph, and return the child's data.
     ///
+    /// `parent` and `child` must be distinct, existing nodes. Any required edge rewiring must be
+    /// completed before calling this method, because removing `child` also removes its incident
+    /// edges.
+    ///
     /// The caller is responsible for edge rewiring and finalising `set_mean_counts`,
     /// `set_internal_edge`, and `invert_if_needed` on `parent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either node ID is invalid or if `parent` and `child` refer to the same node.
     pub fn merge_nodes(&mut self, parent: NodeId, child: NodeId, edge: EdgeType) -> NodeStruct {
         let child_data = self.inner.remove_node(to_backend_node(child)).unwrap();
         self.inner
