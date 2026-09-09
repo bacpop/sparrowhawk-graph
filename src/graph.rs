@@ -800,6 +800,18 @@ impl DbgGraph {
     }
 
     /// Find the incoming edge and modify edge orientations after shrinking through a non-direct internal edge.
+    ///
+    /// The caller must ensure that `internal_edge_ty` is non-direct (`MinToMax` or `MaxToMin`),
+    /// that `in_edge_ty` ends at the source carry of `internal_edge_ty`, and that exactly one
+    /// directed edge of type `in_edge_ty` exists from `prev_node` to `base_node`.
+    ///
+    /// The shrinker establishes these conditions by filtering the incoming edge carry and checking
+    /// single-edge path degrees before calling this method.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the preconditions are violated, including when the connecting edge is absent or
+    /// multiple connecting edges are present.
     #[inline]
     pub fn modify_edges_when_shrinking_between(
         &mut self,
