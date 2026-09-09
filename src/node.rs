@@ -104,7 +104,16 @@ impl NodeStruct {
     }
 
     /// Sets the counts of the node as the mean of the vector you give the function.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `countsvec` is empty.
     pub fn set_mean_counts(&mut self, countsvec: &[u32]) {
+        assert!(
+            !countsvec.is_empty(),
+            "set_mean_counts requires at least one count"
+        );
+
         self.counts = (countsvec.iter().map(|&e| e as u64).sum::<u64>() as f64
             / countsvec.len() as f64)
             .round() as u32;
@@ -122,6 +131,33 @@ impl NodeStruct {
 impl fmt::Display for NodeStruct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.counts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node() -> NodeStruct {
+        NodeStruct {
+            counts: 7,
+            abs_ind: vec![1],
+            innerdir: None,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "set_mean_counts requires at least one count")]
+    fn set_mean_counts_panics_on_empty_input() {
+        let mut node = node();
+        node.set_mean_counts(&[]);
+    }
+
+    #[test]
+    fn set_mean_counts_preserves_nonempty_behaviour() {
+        let mut node = node();
+        node.set_mean_counts(&[2, 4]);
+        assert_eq!(node.counts, 3);
     }
 }
 
