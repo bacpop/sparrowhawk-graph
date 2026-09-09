@@ -99,6 +99,11 @@ pub struct DbgGraph {
     k: usize,
 }
 
+#[inline]
+fn assert_valid_k(k: usize) {
+    assert!(k > 0, "k-mer length must be at least 1");
+}
+
 impl Default for DbgGraph {
     fn default() -> Self {
         Self::new(1)
@@ -110,6 +115,8 @@ impl Default for DbgGraph {
 impl DbgGraph {
     /// Create an empty graph for the given k-mer length.
     pub fn new(k: usize) -> Self {
+        assert_valid_k(k);
+
         DbgGraph {
             inner: Inner::default(),
             k,
@@ -124,6 +131,8 @@ impl DbgGraph {
         k: usize,
         map: &HashMap<u64, HashInfoSimple, BuildHasherDefault<NoHashHasher<u64>>>,
     ) -> Self {
+        assert_valid_k(k);
+
         let mut g = DbgGraph {
             inner: Inner::with_capacity(map.len(), map.len() * 2),
             k,
@@ -1120,6 +1129,20 @@ mod tests {
         assert!(graph.get_gfa_string().contains("LN:i:0"));
         assert!(graph.get_gfa_string().contains("\t0M"));
         assert!(graph.get_gfa2_string().contains("\t0$"));
+    }
+
+    #[test]
+    #[should_panic(expected = "k-mer length must be at least 1")]
+    fn test_new_rejects_zero_k() {
+        let _ = DbgGraph::new(0);
+    }
+
+    #[test]
+    #[should_panic(expected = "k-mer length must be at least 1")]
+    fn test_from_kmer_map_rejects_zero_k() {
+        let map: HashMap<u64, HashInfoSimple, BuildHasherDefault<NoHashHasher<u64>>> =
+            HashMap::default();
+        let _ = DbgGraph::from_kmer_map(0, &map);
     }
 
     #[test]
