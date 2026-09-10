@@ -98,7 +98,7 @@ impl NodeStruct {
         if let Some(id) = self.innerdir {
             if id.get_from_and_to().1 != outedge.get_from_and_to().0 {
                 self.abs_ind.reverse();
-                self.innerdir.unwrap().rev();
+                self.innerdir = Some(id.rev());
             }
         }
     }
@@ -169,6 +169,48 @@ mod tests {
     fn set_internal_edge_rejects_non_direct_edges() {
         let mut node = node();
         node.set_internal_edge(EdgeType::MinToMax);
+    }
+
+    #[test]
+    fn invert_if_needed_reverses_sequence_and_direct_internal_edge() {
+        let mut node = NodeStruct {
+            counts: 7,
+            abs_ind: vec![1, 2, 3],
+            innerdir: Some(EdgeType::MinToMin),
+        };
+
+        node.invert_if_needed(EdgeType::MaxToMin);
+
+        assert_eq!(node.abs_ind, vec![3, 2, 1]);
+        assert_eq!(node.innerdir, Some(EdgeType::MaxToMax));
+    }
+
+    #[test]
+    fn invert_if_needed_reverses_sequence_and_self_reversing_internal_edge() {
+        let mut node = NodeStruct {
+            counts: 7,
+            abs_ind: vec![1, 2, 3],
+            innerdir: Some(EdgeType::MinToMax),
+        };
+
+        node.invert_if_needed(EdgeType::MinToMin);
+
+        assert_eq!(node.abs_ind, vec![3, 2, 1]);
+        assert_eq!(node.innerdir, Some(EdgeType::MinToMax));
+    }
+
+    #[test]
+    fn invert_if_needed_keeps_aligned_orientation_unchanged() {
+        let mut node = NodeStruct {
+            counts: 7,
+            abs_ind: vec![1, 2, 3],
+            innerdir: Some(EdgeType::MinToMin),
+        };
+
+        node.invert_if_needed(EdgeType::MinToMax);
+
+        assert_eq!(node.abs_ind, vec![1, 2, 3]);
+        assert_eq!(node.innerdir, Some(EdgeType::MinToMin));
     }
 }
 
