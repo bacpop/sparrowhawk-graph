@@ -128,6 +128,10 @@ impl DbgGraph {
     ///
     /// `map` is a `HashMap<canonical_hash, HashInfoSimple, ...>` as returned by
     /// `preprocessing_standalone` / `preprocessing_wasm`.
+    ///
+    /// The map must be closed under neighbour references: every hash appearing in
+    /// a `pre` or `post` entry must also be present as a key in `map`. Missing
+    /// neighbour entries cause this constructor to panic.
     pub fn from_kmer_map(
         k: usize,
         map: &HashMap<u64, HashInfoSimple, BuildHasherDefault<NoHashHasher<u64>>>,
