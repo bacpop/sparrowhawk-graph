@@ -20,6 +20,7 @@ use crate::types::{CarryType, EdgeId, EdgeType, HashInfoSimple, Idx, NodeId};
 type Inner = petgraph::stable_graph::StableGraph<NodeStruct, EmptyEdge, petgraph::Directed, Idx>;
 type BackendNodeIndex = petgraph::stable_graph::NodeIndex<Idx>;
 type BackendEdgeIndex = petgraph::stable_graph::EdgeIndex<Idx>;
+type ExportEdgeKey = (NodeId, EdgeType, NodeId);
 
 #[inline]
 fn to_backend_node(node: NodeId) -> BackendNodeIndex {
@@ -938,21 +939,33 @@ impl DbgGraph {
 
     /// Return graph as a DOT format string.
     pub fn get_dot_string(&self) -> String {
+        let mut representatives = self.representative_edge_indices();
+        representatives.sort_unstable();
+
         let mut graphfordot = self.inner.clone();
-        graphfordot.retain_nodes(|g, n| {
-            g.neighbors_directed(n, petgraph::EdgeDirection::Outgoing)
-                .count()
-                != 0
-                || g.neighbors_directed(n, petgraph::EdgeDirection::Incoming)
-                    .count()
-                    != 0
-        });
+        graphfordot.retain_edges(|_, edge| representatives.binary_search(&edge).is_ok());
         format!(
             "{:?}",
             Dot::with_attr_getters(
                 &graphfordot,
                 &[Config::NodeNoLabel, Config::EdgeNoLabel],
-                &|_, e| format!("label = \"{:?}\"", e.weight().t),
+                &|_, e| {
+                    let (source_carry, target_carry) = e.weight().t.get_from_and_to();
+
+                    let source_sign = match source_carry {
+                        CarryType::Min => "+",
+                        CarryType::Max => "-",
+                    };
+                    let target_sign = match target_carry {
+                        CarryType::Min => "+",
+                        CarryType::Max => "-",
+                    };
+
+                    format!(
+                        "label = \"{:?} ({source_sign},{target_sign})\"",
+                        e.weight().t
+                    )
+                },
                 &|_, n| format!(
                     "label = \"{:?} | {:?}\" counts = {:?} kmers = {:?}",
                     n.1.counts,
@@ -995,30 +1008,33 @@ impl DbgGraph {
             ));
         });
 
-        // Add edges
-        self.inner.edge_indices().for_each(|ei| {
-            let (sid, tid) = self.inner.edge_endpoints(ei).unwrap();
-            let (st, tt) = self.inner.edge_weight(ei).unwrap().t.get_from_and_to();
+        // Add one record for each reciprocal edge class. The orientation signs
+        // preserve which end of each oriented segment the link attaches to.
+        self.representative_edge_indices()
+            .into_iter()
+            .for_each(|ei| {
+                let (sid, tid) = self.inner.edge_endpoints(ei).unwrap();
+                let (st, tt) = self.inner.edge_weight(ei).unwrap().t.get_from_and_to();
 
-            let ssign: &str = match st {
-                CarryType::Min => "+",
-                CarryType::Max => "-",
-            };
-            let tsign: &str = match tt {
-                CarryType::Min => "+",
-                CarryType::Max => "-",
-            };
+                let ssign: &str = match st {
+                    CarryType::Min => "+",
+                    CarryType::Max => "-",
+                };
+                let tsign: &str = match tt {
+                    CarryType::Min => "+",
+                    CarryType::Max => "-",
+                };
 
-            output.push_str(&format!(
-                "L\t{}\t{}\t{}\t{}\t{}M\tID:Z:{}\n",
-                sid.index(),
-                ssign,
-                tid.index(),
-                tsign,
-                self.k - 1,
-                ei.index(),
-            ));
-        });
+                output.push_str(&format!(
+                    "L\t{}\t{}\t{}\t{}\t{}M\tID:Z:{}\n",
+                    sid.index(),
+                    ssign,
+                    tid.index(),
+                    tsign,
+                    self.k - 1,
+                    ei.index(),
+                ));
+            });
 
         output
     }
@@ -1048,62 +1064,86 @@ impl DbgGraph {
             ));
         });
 
-        // Add edges
-        self.inner.edge_indices().for_each(|ei| {
-            let (sid, tid) = self.inner.edge_endpoints(ei).unwrap();
-            let (st, tt) = self.inner.edge_weight(ei).unwrap().t.get_from_and_to();
+        // Add one record for each reciprocal edge class. The orientation signs
+        // and endpoint intervals preserve the attachment ends in GFA2.
+        self.representative_edge_indices()
+            .into_iter()
+            .for_each(|ei| {
+                let (sid, tid) = self.inner.edge_endpoints(ei).unwrap();
+                let (st, tt) = self.inner.edge_weight(ei).unwrap().t.get_from_and_to();
 
-            let ssign: &str;
-            let tsign: &str;
-            let sbeg: String;
-            let send: String;
-            let tbeg: String;
-            let tend: String;
+                let ssign: &str;
+                let tsign: &str;
+                let sbeg: String;
+                let send: String;
+                let tbeg: String;
+                let tend: String;
 
-            match st {
-                CarryType::Min => {
-                    ssign = "+";
-                    let tmplen = self.inner.node_weight(sid).unwrap().abs_ind.len();
-                    sbeg = format!("{}", tmplen);
-                    send = format!("{}$", self.k + tmplen - 1);
+                match st {
+                    CarryType::Min => {
+                        ssign = "+";
+                        let tmplen = self.inner.node_weight(sid).unwrap().abs_ind.len();
+                        sbeg = format!("{}", tmplen);
+                        send = format!("{}$", self.k + tmplen - 1);
+                    }
+                    CarryType::Max => {
+                        ssign = "-";
+                        sbeg = "0".to_owned();
+                        send = format!("{}", self.k - 1);
+                    }
                 }
-                CarryType::Max => {
-                    ssign = "-";
-                    sbeg = "0".to_owned();
-                    send = format!("{}", self.k - 1);
-                }
-            }
 
-            match tt {
-                CarryType::Min => {
-                    tsign = "+";
-                    tbeg = "0".to_owned();
-                    tend = format!("{}", self.k - 1);
+                match tt {
+                    CarryType::Min => {
+                        tsign = "+";
+                        tbeg = "0".to_owned();
+                        tend = format!("{}", self.k - 1);
+                    }
+                    CarryType::Max => {
+                        tsign = "-";
+                        let tmplen = self.inner.node_weight(tid).unwrap().abs_ind.len();
+                        tbeg = format!("{}", tmplen);
+                        tend = format!("{}$", self.k + tmplen - 1);
+                    }
                 }
-                CarryType::Max => {
-                    tsign = "-";
-                    let tmplen = self.inner.node_weight(tid).unwrap().abs_ind.len();
-                    tbeg = format!("{}", tmplen);
-                    tend = format!("{}$", self.k + tmplen - 1);
-                }
-            }
 
-            output.push_str(&format!(
-                "E\t{}\t{}{}\t{}{}\t{}\t{}\t{}\t{}\t{}M\n",
-                ei.index(),
-                sid.index(),
-                ssign,
-                tid.index(),
-                tsign,
-                sbeg,
-                send,
-                tbeg,
-                tend,
-                self.k - 1,
-            ));
-        });
+                output.push_str(&format!(
+                    "E\t{}\t{}{}\t{}{}\t{}\t{}\t{}\t{}\t{}M\n",
+                    ei.index(),
+                    sid.index(),
+                    ssign,
+                    tid.index(),
+                    tsign,
+                    sbeg,
+                    send,
+                    tbeg,
+                    tend,
+                    self.k - 1,
+                ));
+            });
 
         output
+    }
+
+    fn representative_edge_indices(&self) -> Vec<BackendEdgeIndex> {
+        let mut seen: BTreeSet<ExportEdgeKey> = BTreeSet::new();
+        let mut representatives = Vec::new();
+
+        for edge in self.inner.edge_references() {
+            let key = (
+                from_backend_node(edge.source()),
+                edge.weight().t,
+                from_backend_node(edge.target()),
+            );
+            let reverse_key = (key.2, key.1.rev(), key.0);
+            let canonical_key = if key <= reverse_key { key } else { reverse_key };
+
+            if seen.insert(canonical_key) {
+                representatives.push(edge.id());
+            }
+        }
+
+        representatives
     }
 }
 #[cfg(test)]

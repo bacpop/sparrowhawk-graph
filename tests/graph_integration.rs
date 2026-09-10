@@ -346,6 +346,159 @@ fn test_exporters_complete_partial_writes() {
 }
 
 #[test]
+fn test_exporters_emit_one_record_per_reciprocal_pair_and_keep_isolated_nodes() {
+    let mut graph = DbgGraph::new(5);
+    let from = graph.add_node(graph_test_node(1, 0));
+    let to = graph.add_node(graph_test_node(1, 1));
+    let _isolated = graph.add_node(graph_test_node(1, 2));
+    graph.add_bi_edge(from, to, EdgeType::MinToMin);
+
+    let dot = graph.get_dot_string();
+    assert!(dot.lines().any(|line| line.trim_start().starts_with("0 [")));
+    assert!(dot.lines().any(|line| line.trim_start().starts_with("1 [")));
+    assert!(dot.lines().any(|line| line.trim_start().starts_with("2 [")));
+    assert_eq!(dot.lines().filter(|line| line.contains(" -> ")).count(), 1);
+
+    assert_eq!(
+        graph
+            .get_gfa_string()
+            .lines()
+            .filter(|line| line.starts_with("L\t"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        graph
+            .get_gfa2_string()
+            .lines()
+            .filter(|line| line.starts_with("E\t"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn test_exporters_preserve_distinct_orientations_between_same_nodes() {
+    let mut graph = DbgGraph::new(5);
+    let from = graph.add_node(graph_test_node(1, 0));
+    let to = graph.add_node(graph_test_node(1, 1));
+    graph.add_bi_edge(from, to, EdgeType::MinToMin);
+    graph.add_bi_edge(from, to, EdgeType::MaxToMin);
+
+    let gfa = graph.get_gfa_string();
+    let links: Vec<_> = gfa.lines().filter(|line| line.starts_with("L\t")).collect();
+    assert_eq!(links.len(), 2);
+    assert!(links.iter().any(|line| {
+        let fields: Vec<_> = line.split('\t').collect();
+        fields[1] == "0" && fields[2] == "+" && fields[3] == "1" && fields[4] == "+"
+    }));
+    assert!(links.iter().any(|line| {
+        let fields: Vec<_> = line.split('\t').collect();
+        fields[1] == "0" && fields[2] == "-" && fields[3] == "1" && fields[4] == "+"
+    }));
+
+    assert_eq!(
+        graph
+            .get_gfa2_string()
+            .lines()
+            .filter(|line| line.starts_with("E\t"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn test_exporters_preserve_all_edge_type_endpoints() {
+    let cases = [
+        (EdgeType::MinToMin, "+", "+", "2", "6$", "0", "4"),
+        (EdgeType::MinToMax, "+", "-", "2", "6$", "2", "6$"),
+        (EdgeType::MaxToMin, "-", "+", "0", "4", "0", "4"),
+        (EdgeType::MaxToMax, "-", "-", "0", "4", "2", "6$"),
+    ];
+
+    for (edge_type, source_sign, target_sign, source_begin, source_end, target_begin, target_end) in
+        cases
+    {
+        let mut graph = DbgGraph::new(5);
+        let from = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![0, 1],
+            innerdir: None,
+        });
+        let to = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![2, 3],
+            innerdir: None,
+        });
+        graph.add_bi_edge(from, to, edge_type);
+
+        let gfa = graph.get_gfa_string();
+        let link = gfa.lines().find(|line| line.starts_with("L\t")).unwrap();
+        let link_fields: Vec<_> = link.split('\t').collect();
+        assert_eq!(link_fields[2], source_sign);
+        assert_eq!(link_fields[4], target_sign);
+
+        let dot = graph.get_dot_string();
+        assert!(dot.contains(&format!(
+            "label = \"{edge_type:?} ({source_sign},{target_sign})\""
+        )));
+
+        let gfa2 = graph.get_gfa2_string();
+        let edge = gfa2.lines().find(|line| line.starts_with("E\t")).unwrap();
+        let edge_fields: Vec<_> = edge.split('\t').collect();
+        assert_eq!(edge_fields[2], &format!("0{source_sign}"));
+        assert_eq!(edge_fields[3], &format!("1{target_sign}"));
+        assert_eq!(edge_fields[4], source_begin);
+        assert_eq!(edge_fields[5], source_end);
+        assert_eq!(edge_fields[6], target_begin);
+        assert_eq!(edge_fields[7], target_end);
+    }
+}
+
+#[test]
+fn test_exporters_deduplicate_self_loop_pairs() {
+    let mut direct_loop = DbgGraph::new(5);
+    let node = direct_loop.add_node(graph_test_node(1, 0));
+    direct_loop.add_bi_edge(node, node, EdgeType::MinToMin);
+    assert_eq!(
+        direct_loop
+            .get_dot_string()
+            .lines()
+            .filter(|line| line.contains(" -> "))
+            .count(),
+        1
+    );
+    assert_eq!(
+        direct_loop
+            .get_gfa_string()
+            .lines()
+            .filter(|line| line.starts_with("L\t"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        direct_loop
+            .get_gfa2_string()
+            .lines()
+            .filter(|line| line.starts_with("E\t"))
+            .count(),
+        1
+    );
+
+    let mut cross_loop = DbgGraph::new(5);
+    let node = cross_loop.add_node(graph_test_node(1, 0));
+    cross_loop.add_bi_edge(node, node, EdgeType::MinToMax);
+    assert_eq!(
+        cross_loop
+            .get_gfa_string()
+            .lines()
+            .filter(|line| line.starts_with("L\t"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 #[should_panic(expected = "failed to write DOT graph")]
 fn test_dot_export_reports_write_errors() {
     let graph = DbgGraph::new(31);
