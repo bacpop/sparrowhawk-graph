@@ -301,6 +301,17 @@ impl DbgGraph {
             .map(|(from, to)| (from_backend_node(from), from_backend_node(to)))
     }
 
+    /// Return the total number of k-mers represented by an ordered path.
+    ///
+    /// Returns `None` if the path contains a removed node or if the total
+    /// overflows `usize`.
+    pub fn path_kmer_length(&self, path: &[NodeId]) -> Option<usize> {
+        path.iter().try_fold(0usize, |total, &node| {
+            let node_len = self.node_weight(node)?.abs_ind.len();
+            total.checked_add(node_len)
+        })
+    }
+
     /// Validate all directed connections in the graph.
     ///
     /// Every edge must have a reverse edge with the type returned by [`EdgeType::rev`], with
@@ -1197,6 +1208,36 @@ mod tests {
         assert_eq!(graph.node_count(), 1);
         assert!(graph.contains_node(node_idx));
         assert_eq!(graph.node_weight(node_idx), Some(&node_data));
+    }
+
+    #[test]
+    fn test_path_kmer_length_sums_live_nodes() {
+        let mut graph = DbgGraph::new(31);
+        let first = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![0; 3],
+            innerdir: None,
+        });
+        let second = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![0; 7],
+            innerdir: None,
+        });
+
+        assert_eq!(graph.path_kmer_length(&[first, second]), Some(10));
+    }
+
+    #[test]
+    fn test_path_kmer_length_rejects_removed_nodes() {
+        let mut graph = DbgGraph::new(31);
+        let node = graph.add_node(NodeStruct {
+            counts: 1,
+            abs_ind: vec![0],
+            innerdir: None,
+        });
+        graph.remove_node(node);
+
+        assert_eq!(graph.path_kmer_length(&[node]), None);
     }
 
     #[test]
