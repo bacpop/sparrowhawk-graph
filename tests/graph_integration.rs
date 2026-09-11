@@ -619,6 +619,39 @@ fn test_set_first_edge_type_between() {
 }
 
 #[test]
+#[should_panic(expected = "set_first_edge_type_between requires an existing connecting edge")]
+fn test_set_first_edge_type_between_reports_missing_edge() {
+    let mut graph = DbgGraph::new(31);
+    let source = graph.add_node(graph_test_node(1, 0));
+    let target = graph.add_node(graph_test_node(1, 1));
+
+    graph.set_first_edge_type_between(source, target, EdgeType::MinToMin);
+}
+
+#[test]
+#[should_panic(
+    expected = "modify_edges_when_shrinking_between requires an existing edge from prev_node to base_node"
+)]
+fn test_modify_edges_when_shrinking_reports_missing_edge() {
+    let mut graph = DbgGraph::new(31);
+    let prev = graph.add_node(graph_test_node(1, 0));
+    let base = graph.add_node(graph_test_node(1, 1));
+
+    graph.modify_edges_when_shrinking_between(base, prev, EdgeType::MinToMax, EdgeType::MinToMin);
+}
+
+#[test]
+#[should_panic(
+    expected = "modify_edges_when_shrinking_between requires distinct base_node and prev_node"
+)]
+fn test_modify_edges_when_shrinking_rejects_same_node() {
+    let mut graph = DbgGraph::new(31);
+    let node = graph.add_node(graph_test_node(1, 0));
+
+    graph.modify_edges_when_shrinking_between(node, node, EdgeType::MinToMax, EdgeType::MinToMin);
+}
+
+#[test]
 fn test_modify_edges_when_shrinking_min_to_max_with_min_to_min_input() {
     let mut graph = DbgGraph::new(31);
     let prev = graph.add_node(graph_test_node(1, 0));

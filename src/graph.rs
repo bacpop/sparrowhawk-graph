@@ -799,13 +799,21 @@ impl DbgGraph {
     }
 
     /// Set the first edge type between two nodes, in backend iteration order.
+    ///
+    /// The edge is selected by its endpoints only; `edge_type` is the replacement
+    /// type, not a filter. Callers must ensure that a connecting edge exists and
+    /// that no competing parallel edge makes the selection ambiguous.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no edge connects `from` to `to`.
     #[inline]
     pub fn set_first_edge_type_between(&mut self, from: NodeId, to: NodeId, edge_type: EdgeType) {
         let edge = self
             .inner
             .edges_connecting(to_backend_node(from), to_backend_node(to))
             .next()
-            .unwrap()
+            .expect("set_first_edge_type_between requires an existing connecting edge")
             .id();
         self.inner.edge_weight_mut(edge).unwrap().t = edge_type;
     }
@@ -815,14 +823,17 @@ impl DbgGraph {
     /// The caller must ensure that `internal_edge_ty` is non-direct (`MinToMax` or `MaxToMin`),
     /// that `in_edge_ty` ends at the source carry of `internal_edge_ty`, and that exactly one
     /// directed edge of type `in_edge_ty` exists from `prev_node` to `base_node`.
+    /// `base_node` and `prev_node` must be distinct. This method does not use `in_edge_ty` to
+    /// disambiguate multiple edges between the same endpoints.
     ///
     /// The shrinker establishes these conditions by filtering the incoming edge carry and checking
     /// single-edge path degrees before calling this method.
     ///
     /// # Panics
     ///
-    /// Panics if the preconditions are violated, including when the connecting edge is absent or
-    /// multiple connecting edges are present.
+    /// Panics if the preconditions are violated, including when `base_node` and `prev_node` are
+    /// the same node, when the connecting edge is absent, or when multiple connecting edges are
+    /// present.
     #[inline]
     pub fn modify_edges_when_shrinking_between(
         &mut self,
@@ -831,15 +842,23 @@ impl DbgGraph {
         internal_edge_ty: EdgeType,
         in_edge_ty: EdgeType,
     ) {
+        assert!(
+            base_node != prev_node,
+            "modify_edges_when_shrinking_between requires distinct base_node and prev_node; got {base_node:?}"
+        );
+
         let edges = self.edges_between(prev_node, base_node);
         if edges.len() > 1 {
             panic!("More than one linking outgoing edge, this should not happen unless there are multiple connections to the same node.");
         }
+        let in_edge_ind = edges.first().copied().expect(
+            "modify_edges_when_shrinking_between requires an existing edge from prev_node to base_node",
+        );
         self.modify_edges_when_shrinking(
             base_node,
             prev_node,
             internal_edge_ty,
-            edges[0],
+            in_edge_ind,
             in_edge_ty,
         );
     }
