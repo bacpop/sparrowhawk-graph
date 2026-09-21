@@ -11,6 +11,13 @@ pub type Idx = usize;
 /// Type for representing the weight (count) of a k-mer.
 pub type EdgeWeight = u32;
 
+/// A graph edge whose target is an index into an aligned k-mer table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IndexedEdge {
+    pub target: Idx,
+    pub edge_type: EdgeType,
+}
+
 /// Opaque, copyable handle identifying a node in the graph.
 ///
 /// The handle is stable for the lifetime of its node, can be stored and passed by value, and is

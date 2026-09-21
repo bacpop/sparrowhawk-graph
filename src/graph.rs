@@ -14,7 +14,9 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::Direction::{Incoming, Outgoing};
 
 use crate::node::{EmptyEdge, NodeStruct};
-use crate::types::{CarryType, EdgeId, EdgeType, HashInfoSimple, Idx, NodeId};
+use crate::types::{
+    CarryType, EdgeId, EdgeType, EdgeWeight, HashInfoSimple, Idx, IndexedEdge, NodeId,
+};
 
 /// Inner petgraph type alias.
 type Inner = petgraph::stable_graph::StableGraph<NodeStruct, EmptyEdge, petgraph::Directed, Idx>;
@@ -210,6 +212,112 @@ impl DbgGraph {
 
         log::debug!(
             "DbgGraph::from_kmer_map: {} nodes, {} edges",
+            g.inner.node_count(),
+            g.inner.edge_count()
+        );
+
+        g
+    }
+
+    /// Build a de Bruijn graph from aligned k-mer vectors.
+    ///
+    /// Neighbours for each source are stored in one vector. The first
+    /// `predecessor_counts[source]` entries are incoming; the remainder are outgoing. All input
+    /// vectors are consumed so their allocations can be released as construction progresses.
+    pub fn from_indexed_kmers(
+        k: usize,
+        canonical_hashes: Vec<u64>,
+        counts: Vec<EdgeWeight>,
+        neighbours: Vec<Vec<IndexedEdge>>,
+        predecessor_counts: Vec<u8>,
+    ) -> Self {
+        assert_valid_k(k);
+
+        let node_count = canonical_hashes.len();
+        assert_eq!(
+            counts.len(),
+            node_count,
+            "indexed k-mer hashes and counts have different lengths"
+        );
+        assert_eq!(
+            neighbours.len(),
+            node_count,
+            "indexed k-mer hashes and neighbour lists have different lengths"
+        );
+        assert_eq!(
+            predecessor_counts.len(),
+            node_count,
+            "indexed k-mer hashes and predecessor counts have different lengths"
+        );
+
+        for (source, (edges, predecessor_count)) in
+            neighbours.iter().zip(predecessor_counts.iter()).enumerate()
+        {
+            assert!(
+                usize::from(*predecessor_count) <= edges.len(),
+                "predecessor count exceeds neighbour-list length for k-mer index {source}"
+            );
+            for edge in edges {
+                assert!(
+                    edge.target < node_count,
+                    "neighbour target {} is outside the indexed k-mer table of length {node_count}",
+                    edge.target
+                );
+            }
+        }
+
+        let mut g = DbgGraph {
+            inner: Inner::with_capacity(node_count, node_count.saturating_mul(2)),
+            k,
+        };
+
+        for (expected_index, (hash, count)) in canonical_hashes.into_iter().zip(counts).enumerate()
+        {
+            let actual = g.inner.add_node(NodeStruct {
+                counts: count,
+                abs_ind: vec![hash],
+                innerdir: None,
+            });
+            assert_eq!(
+                actual.index(),
+                expected_index,
+                "sequential graph-node insertion did not preserve indexed k-mer order"
+            );
+        }
+
+        for (current, (edges, predecessor_count)) in
+            neighbours.into_iter().zip(predecessor_counts).enumerate()
+        {
+            let current = BackendNodeIndex::new(current);
+            let split = usize::from(predecessor_count);
+
+            for edge in &edges[..split] {
+                let predecessor = BackendNodeIndex::new(edge.target);
+                if !g
+                    .inner
+                    .edges_connecting(predecessor, current)
+                    .any(|existing| existing.weight().t == edge.edge_type)
+                {
+                    g.inner
+                        .add_edge(predecessor, current, EmptyEdge { t: edge.edge_type });
+                }
+            }
+
+            for edge in &edges[split..] {
+                let successor = BackendNodeIndex::new(edge.target);
+                if !g
+                    .inner
+                    .edges_connecting(current, successor)
+                    .any(|existing| existing.weight().t == edge.edge_type)
+                {
+                    g.inner
+                        .add_edge(current, successor, EmptyEdge { t: edge.edge_type });
+                }
+            }
+        }
+
+        log::debug!(
+            "DbgGraph::from_indexed_kmers: {} nodes, {} edges",
             g.inner.node_count(),
             g.inner.edge_count()
         );
@@ -1307,6 +1415,64 @@ mod tests {
         assert_eq!(graph.k(), k);
         assert_eq!(graph.node_count(), 0);
         assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_graph_from_indexed_kmers_consumes_aligned_edges() {
+        let graph = DbgGraph::from_indexed_kmers(
+            31,
+            vec![10, 20],
+            vec![7, 11],
+            vec![
+                vec![
+                    IndexedEdge {
+                        target: 1,
+                        edge_type: EdgeType::MaxToMax,
+                    },
+                    IndexedEdge {
+                        target: 1,
+                        edge_type: EdgeType::MinToMin,
+                    },
+                ],
+                vec![
+                    IndexedEdge {
+                        target: 0,
+                        edge_type: EdgeType::MinToMin,
+                    },
+                    IndexedEdge {
+                        target: 0,
+                        edge_type: EdgeType::MaxToMax,
+                    },
+                ],
+            ],
+            vec![1, 1],
+        );
+
+        assert_eq!(graph.k(), 31);
+        assert_eq!(graph.node_count(), 2);
+        assert_eq!(graph.edge_count(), 2);
+        assert!(graph.validate().is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "outside the indexed k-mer table")]
+    fn test_graph_from_indexed_kmers_rejects_invalid_target() {
+        let _ = DbgGraph::from_indexed_kmers(
+            31,
+            vec![10],
+            vec![7],
+            vec![vec![IndexedEdge {
+                target: 1,
+                edge_type: EdgeType::MinToMin,
+            }]],
+            vec![0],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "predecessor count exceeds neighbour-list length")]
+    fn test_graph_from_indexed_kmers_rejects_invalid_split() {
+        let _ = DbgGraph::from_indexed_kmers(31, vec![10], vec![7], vec![Vec::new()], vec![1]);
     }
 
     #[test]

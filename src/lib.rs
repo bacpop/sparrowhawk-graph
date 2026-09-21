@@ -6,7 +6,9 @@ pub mod types;
 
 pub use graph::{BubbleStartEdge, DbgGraph, GraphValidationIssue, GraphValidationReport};
 pub use node::{EmptyEdge, NodeStruct};
-pub use types::{CarryType, EdgeId, EdgeType, EdgeWeight, HashInfoSimple, Idx, KmerMap, NodeId};
+pub use types::{
+    CarryType, EdgeId, EdgeType, EdgeWeight, HashInfoSimple, Idx, IndexedEdge, KmerMap, NodeId,
+};
 
 /// Serialized representation of a single contig (ordered list of node data).
 pub type SerializedContig = Vec<NodeStruct>;
