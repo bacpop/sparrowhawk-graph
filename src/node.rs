@@ -103,20 +103,27 @@ impl NodeStruct {
         }
     }
 
-    /// Sets the counts of the node as the mean of the vector you give the function.
+    /// Sets the counts of the node as the mean coverage of everything merged into it, each
+    /// `(counts, k-mers represented)` contribution weighted by its second element. A one-k-mer node
+    /// and a thousand-k-mer node are not equal evidence.
     ///
     /// # Panics
     ///
-    /// Panics if `countsvec` is empty.
-    pub fn set_mean_counts(&mut self, countsvec: &[u32]) {
+    /// Panics if `contributions` is empty, or if they represent no k-mers at all.
+    pub fn set_mean_counts(&mut self, contributions: &[(u32, usize)]) {
         assert!(
-            !countsvec.is_empty(),
+            !contributions.is_empty(),
             "set_mean_counts requires at least one count"
         );
 
-        self.counts = (countsvec.iter().map(|&e| e as u64).sum::<u64>() as f64
-            / countsvec.len() as f64)
-            .round() as u32;
+        // u64 is ample: the sum is bounded by u32::MAX times the k-mers in the whole graph.
+        let (weighted, kmers) = contributions.iter().fold((0u64, 0u64), |(w, n), &(c, k)| {
+            (w + u64::from(c) * k as u64, n + k as u64)
+        });
+        assert!(kmers > 0, "set_mean_counts requires at least one k-mer");
+
+        // Rounds half up. A weighted mean of u32s cannot exceed u32::MAX, so the cast is lossless.
+        self.counts = ((weighted + kmers / 2) / kmers) as u32;
     }
 
     /// Sets the type of the internal edge as the one you provide the function.
@@ -160,8 +167,43 @@ mod tests {
     #[test]
     fn set_mean_counts_preserves_nonempty_behaviour() {
         let mut node = node();
-        node.set_mean_counts(&[2, 4]);
+        // Equal weights, so this is still the plain mean it always was.
+        node.set_mean_counts(&[(2, 1), (4, 1)]);
         assert_eq!(node.counts, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "set_mean_counts requires at least one k-mer")]
+    fn set_mean_counts_panics_when_nothing_is_represented() {
+        let mut node = node();
+        node.set_mean_counts(&[(10, 0)]);
+    }
+
+    /// The whole point of the weighting: a single leftover k-mer must not drag a long unitig's
+    /// coverage halfway down to its own.
+    #[test]
+    fn set_mean_counts_weights_by_represented_kmers() {
+        let mut node = node();
+        node.set_mean_counts(&[(10, 1), (100, 9)]);
+        assert_eq!(node.counts, 91, "an unweighted mean would give 55");
+    }
+
+    /// Shrinking reaches the same unitig by different merge orders, so the answer must not depend
+    /// on how the contributions were grouped. An unweighted mean fails this.
+    #[test]
+    fn set_mean_counts_is_associative_across_regroupings() {
+        let (a, b, c) = ((10u32, 1usize), (40, 3), (100, 6));
+
+        let mut all_at_once = node();
+        all_at_once.set_mean_counts(&[a, b, c]);
+
+        // First {a, b} into one node of 4 k-mers, then that node with c.
+        let mut ab = node();
+        ab.set_mean_counts(&[a, b]);
+        let mut in_stages = node();
+        in_stages.set_mean_counts(&[(ab.counts, a.1 + b.1), c]);
+
+        assert_eq!(all_at_once.counts, in_stages.counts);
     }
 
     #[test]
