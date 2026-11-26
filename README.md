@@ -1,5 +1,5 @@
 # sparrowhawk-graph
-Bidirected de Bruijn graph library for the [sparrowhawk](https://github.com/bacpop/sparrowhawk-asm) bacterial genome assembler, written in Rust.
+Bidirected de Bruijn graph library for the [sparrowhawk-asm](https://github.com/bacpop/sparrowhawk-asm) bacterial genome assembler, written in Rust.
 
 ---
 ## Disclaimer :warning: :construction:
