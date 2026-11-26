@@ -2,6 +2,20 @@
 name = "sparrowhawk-graph"
 version = "0.1.0"
 edition = "2021"
+description = "Bidirected de Bruijn graph library for the sparrowhawk bacterial genome assembler"
+repository = "https://github.com/bacpop/sparrowhawk-graph"
+homepage = "https://bacpop.org/software/"
+license = "Apache-2.0"
+readme = "README.md"
+include = [
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/src",
+    "/tests",
+]
+keywords = ["bioinformatics", "genomics", "assembly", "de-bruijn", "graph"]
+categories = ["science::bioinformatics", "data-structures"]
 
 [dependencies]
 petgraph      = "0.8.1"
